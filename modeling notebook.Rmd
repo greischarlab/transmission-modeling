@@ -1,0 +1,297 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+```{r}
+require(deSolve)
+
+transmission.model <- function(t, x, params) {
+  P <- x[1]
+  X <- x[2]
+  
+  with(
+    as.list(params),
+    {
+      dP <- r*P - k*X*P
+      dX <- a - d*X + y*k*X*P
+    
+      res <- c(dP, dX)
+      list(res)
+    }
+  )
+}
+
+transmission.model.stochastic <- function(t, x, params, vary) {
+  P <- x[1]
+  X <- x[2]
+  
+  if (vary == "r") {
+    with(
+      as.list(params),
+      {
+        dP <- runif(1, 10, 130)*P - k*X*P
+        dX <- a - d*X + y*k*X*P
+        
+        res <- c(dP, dX)
+        list(res)
+      }
+    )
+  } else if (vary == "y") {
+    with(
+      as.list(params),
+      {
+        dP <- r*P - k*X*P
+        dX <- a - d*X + runif(1, .5 * 10^-4, 1.5 * 10^-4)*k*X*P
+        
+        res <- c(dP, dX)
+        list(res)
+      }
+    )
+  } else {
+    with(
+      as.list(params),
+      {
+        dP <- runif(1, 10, 130)*P - k*X*P
+        dX <- a - d*X + runif(1, .5 * 10^-4, 1.5 * 10^-4)*k*X*P
+        
+        res <- c(dP, dX)
+        list(res)
+      }
+    )
+  }
+  
+
+}
+
+transmission.potential <- function(k, P) {
+  return(k*P)
+}
+
+plot.transmission.lines <- function(df, k) {
+  df=df[df$P > 0,]
+  transmission= transmission.potential(k, df$P)
+  lines(df$time, transmission)
+}
+
+plot.simple.model.panel <- function(symp.thresh, datalow, datamed, datahigh, label) {
+  plot(datalow$time, transmission.potential(k,datalow$P), log='y', ylim=c(1, 10^12), type="l",
+       xlab="", ylab="", cex.lab=2, cex.axis=1.5)
+  text(0.05, 3 * 10^11, labels=label, font=2, cex=2)
+  lines(datamed$time, transmission.potential(k,datamed$P), col=medcolor)
+  lines(datahigh$time, transmission.potential(k,datahigh$P), col=highcolor)
+  abline(h=symp.thresh, lty=3, col="red")
+  mtext(text="Time", side=1, line=4, cex=2)
+  mtext(text="Transmission Potential", side=2, line=4, cex=2)
+}
+
+plot.immune.model.panel <- function(symp.thresh, r, label, col, y, vary) {
+  par(mar=c(5.1, 6.1, 4.1, 3.1))
+  params=c(r=r, k=3.5, y=y, a=1, d=.5)
+  
+  datalow <- data.frame(lsoda(c(P=lowid, X=0), time, transmission.model, params))
+  datamed <- data.frame(lsoda(c(P=medid, X=0), time, transmission.model, params))
+  datahigh <- data.frame(lsoda(c(P=highid, X=0), time, transmission.model, params))
+  
+  dfs <- list(datalow, datamed, datahigh)
+  
+  plot(1, type="n", xlab='', ylab='', log='y', xlim=c(0, 0.5), ylim=c(1, 10^4), 
+       cex.lab=2, cex.axis=1.5, cex.main=2)
+  plot.immune.model.line(datalow, symp.thresh, col[1])
+  plot.immune.model.line(datamed, symp.thresh, col[2])
+  plot.immune.model.line(datahigh, symp.thresh, col[3])
+  
+  if(vary=="gamma") {
+    mtext(text=bquote("Transmission when "~ gamma ~ " = " ~ .(y)), font=2, side=3, line=1, cex=2)
+    text(0.05, 6000, labels=label, font=2, cex=2)
+  } else {
+    text(0.25, 10^11, labels=label, font=2, cex=2)
+    mtext(text=bquote("Transmission when r =" ~ .(r)), side=3, font=2, line=1, cex=2)
+  }
+}
+
+plot.immune.model.line <- function(data, symp.thresh, col) {
+  data=data[transmission.potential(k, data$P) > 0,]
+  lines(data$time, transmission.potential(k, data$P), col=col)
+  symptomatic <- data[data$X >= symp.thresh,]
+  lines(symptomatic$time, transmission.potential(k,symptomatic$P), lwd=3)
+}
+
+plot.immune.response.panel <- function(ids, params, cols, label) {
+  datalow <- data.frame(lsoda(c(P=ids[1], X=0), time, transmission.model, params))
+  datamed <- data.frame(lsoda(c(P=ids[2], X=0), time, transmission.model, params))
+  datahigh <- data.frame(lsoda(c(P=ids[3], X=0), time, transmission.model, params))
+  
+  plot(datalow$time, datalow$X, col=cols[1], type="l", ylim=c(0, 300),
+       xlab="Time", ylab="Immune Response", main=paste("R value:", params[1]),
+       cex.lab=2, cex.axis=1.5, cex.main=2)
+  text(0.05, 280, labels=label, font=2, cex=2)
+  
+  lines(datamed$time, datamed$X, col=cols[2])
+  lines(datahigh$time, datahigh$X, col=cols[3])
+}
+
+plot.stochastic.model <- function(params, vary) {
+  par(mar=c(5.1, 6.1, 4.1, 3.1))
+  
+  plot(1, type="n", xlab='', ylab='', log='y', xlim=c(0, 10), ylim=c(1, 10^4), 
+       cex.lab=2, cex.axis=1.5, cex.main=2)
+  
+  mtext(text="Time", side=1, line=4, cex=2)
+  mtext(text="Transmission Potential", side=2, line=4, cex=2)
+  mtext(text=paste("Stochastic Model of Transmission Potential with Varying ", vary, " Values"), 
+        side=3, line=2, cex=2)
+  
+  for (i in seq(1, 99, by=1)) {
+    df.stochastic <- data.frame(lsoda(c(P=lowid, X=0), time, 
+                                      transmission.model.stochastic, params, vary=vary))
+    
+    lines(df.stochastic$time, transmission.potential(k, df.stochastic$P))
+  }
+  
+}
+
+
+#Disproving simple model (everything depends on viral load only)
+
+#Case 1: Symptoms threshold is below transmission threshold
+params40 <- c(r=40, k=3.5, y=10^-4, a=1, d=.5)
+params70 <- c(r=70, k=3.5, y=10^-4, a=1, d=.5)
+params100 <- c(r=100, k=3.5, y=10^-4, a=1, d=.5)
+time <- seq(0,10, by=0.01)
+#ids <- read.csv("IDs.csv")
+lowid <- 1
+medid <- 100
+highid <- 10000
+ids <- c(lowid, medid, highid)
+smallcolor <- "black"
+medcolor <- "#a3a3a3"
+highcolor <- "#d4d4d4"
+cols <- c(smallcolor, medcolor, highcolor)
+k <- 10^-3
+
+datalow <- data.frame(lsoda(c(P=lowid, X=0), time, transmission.model, params40))
+datamed <- data.frame(lsoda(c(P=medid, X=0), time, transmission.model, params40))
+datahigh <- data.frame(lsoda(c(P=highid, X=0), time, transmission.model, params40))
+#dfs <- lapply(ids, function(x) data.frame(lsoda(c(P=x, X=0), time, transmission.model, params40)))
+
+png("Simple Model.png", width=1000, height=700)
+par(mfrow=c(1, 2), mar=c(5.1, 6.1, 4.1, 3.1))
+symp.thresh1 <- 1000
+#plot(1, type="n", xlab='', ylab='', log="y", xlim=c(0, 0.5), ylim=c(1,10^12), cex.axis=2)
+#lapply(dfs, plot.transmission.lines, k=k[2])
+plot.simple.model.panel(symp.thresh1, datalow, datamed, datahigh, "A)")
+
+legend(0.13, 5 * 10^11, 
+       title="Relative Infectious Dose",
+       legend=c("1", "100", "10000", "Symptom threshold"), 
+       lty= c(1, 1, 1, 3, 3), col=c(smallcolor, medcolor, highcolor, "red"), lwd=3, 
+       cex=1.5, text.font=2)
+
+
+#Case 2: Symptoms threshold is above transmission threshold
+
+symp.thresh2 <- 10^8
+
+plot.simple.model.panel(symp.thresh2, datalow, datamed, datahigh, "B)")
+
+dev.off()
+
+#Plotting immune response over time
+
+png("Immune response.png", width=1000, height=900)
+
+par(mfrow=c(2, 2), mar=c(5.1, 6.1, 4.1, 3.1))
+
+plot.immune.response.panel(ids, params40, cols, "A)")
+
+legend(0.18, 290, 
+       title="Relative Infectious Dose",
+       legend=c("1", "100", "10000"), 
+       col=c(smallcolor, medcolor, highcolor), 
+       cex=2, text.font=2, lty=1)
+
+plot.immune.response.panel(ids, params70, cols, "B)")
+
+plot.immune.response.panel(ids, params100, cols, "C)")
+
+dev.off()
+
+#Model where symptom development depends on immune response. r varies.
+
+symp.thresh <- 5
+
+r <- seq(10, 130, by=10)
+
+png("Immune-based symptoms varying r.png", width=1400, height=1000)
+
+par(mfrow=c(3, 4), mar=c(5.1, 6.1, 4.1, 3.1))
+
+for (i in seq(1, 12)) {
+  
+  plot.immune.model.panel(symp.thresh, round(r[i]), paste(LETTERS[i], ")"), cols, 10^-4, "r")
+
+  if (i == 9) {
+    mtext(text="Time", side=1, line=4, cex=2)
+    mtext(text="Transmission Potential", side=2, line=4, cex=2)
+    
+    legend(0.21, 8800, 
+           title="Relative Infectious Dose",
+           legend=c("1", "100", "10000", "Symptoms"), 
+           col=c(smallcolor, medcolor, highcolor, smallcolor), lwd=c(1, 1, 1, 3), 
+           cex=1.5, text.font=2)
+  }
+
+}
+
+dev.off()
+
+#Symptom development depends on immune response. gamma varies. r=40.
+symp.thresh <- 5
+
+y <- seq(.5 * 10^-4, 1.5*10^-4, by=.1*10^-4)
+
+png("Immune-based symptoms varying y many.png", width=1600, height=1000)
+
+par(mfrow=c(3, 4), mar=c(5.1, 6.1, 4.1, 3.1))
+
+for (i in seq(1, 11)) {
+  
+  plot.immune.model.panel(symp.thresh, 40, paste(LETTERS[i], ")"), cols, y[i], "gamma")
+  
+  if (i == 9) {
+    mtext(text="Time", side=1, line=4, cex=2)
+    mtext(text="Transmission Potential", side=2, line=4, cex=2)
+    
+    legend(0.27, 10000, 
+           title="Relative Infectious Dose",
+           legend=c("1", "100", "10000", "Symptoms"), 
+           col=c(smallcolor, medcolor, highcolor, smallcolor), lwd=c(1, 1, 1, 3), 
+           cex=1.5, text.font=2)
+  }
+  
+}
+
+dev.off()
+
+#Stochastic model
+
+png("Stochastic Model varying r.png", width=800, height=700)
+params.stochastic <- c(k=3.5, y=10^-4, a=1, d=.5)
+
+plot.stochastic.model(params.stochastic, "r")
+dev.off()
+
+png("Stochastic Model varying y.png", width=800, height=700)
+params.stochastic <- c(r=40, k=3.5, a=1, d=.5)
+
+plot.stochastic.model(params.stochastic, "y")
+dev.off()
+
+png("Stochastic Model varying both.png", width=800, height=700)
+params.stochastic <- c(k=3.5, a=1, d=.5)
+
+plot.stochastic.model(params.stochastic, "both")
+dev.off()
+```
