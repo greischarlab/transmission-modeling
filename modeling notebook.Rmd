@@ -4,12 +4,13 @@ output:
   html_document:
     df_print: paged
 ---
+
 My packages:
+
 ```{r}
 require(deSolve)
 require(ggplot2)
 ```
-
 
 ```{r}
 transmission.model <- function(t, x, params) {
@@ -257,4 +258,33 @@ params.stochastic <- c(k=3.5, a=1, d=.5)
 
 plot.stochastic.model(params.stochastic, "both")
 dev.off()
+```
+
+# Gamma r reproduction rate Figures
+
+On 11/05/21, I'm going to vary gamma and r and plot transmission potential against time for 3 infectious doses.
+
+```{r}
+gamma_variable <- c(0.5 * 10^-4, 10^-4, 1.5 * 10^-4)
+r_variable <- c(10, 70, 130)
+
+gamma_r <- expand.grid(gamma=gamma_variable, r=r_variable)
+
+desolve_function <- function(gamma, r, id) {
+  time= seq(0,10, by=0.01)
+  parameter_value = c(y=gamma, r=r, a=1, d=.5, k=3.5)
+  df = data.frame(lsoda(c(P=id, X=0), time, transmission.model, parameter_value))
+  tp = data.frame(time=time, transmission_potential=transmission.potential(10^-3, df$P), gamma, r)
+  return(tp)
+}
+
+#MAPPED is a list
+MAPPED <- mapply(desolve_function, gamma_r$gamma, gamma_r$r, id=1, SIMPLIFY = FALSE)
+
+MAPPED_full <- do.call(rbind, MAPPED)
+```
+
+```{r}
+ggplot(MAPPED_full, aes(x=time, y=transmission_potential)) +
+  geom_line() + facet_grid(gamma~r)
 ```
