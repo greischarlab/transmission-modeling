@@ -6,7 +6,10 @@ output:
 ---
 ```{r}
 require(deSolve)
+require(ggplot2)
+```
 
+```{r}
 transmission.model <- function(t, x, params) {
   P <- x[1]
   X <- x[2]
