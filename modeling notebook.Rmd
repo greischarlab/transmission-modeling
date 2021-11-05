@@ -4,10 +4,12 @@ output:
   html_document:
     df_print: paged
 ---
+My packages:
 ```{r}
 require(deSolve)
 require(ggplot2)
 ```
+
 
 ```{r}
 transmission.model <- function(t, x, params) {
@@ -24,48 +26,6 @@ transmission.model <- function(t, x, params) {
       list(res)
     }
   )
-}
-
-transmission.model.stochastic <- function(t, x, params, vary) {
-  P <- x[1]
-  X <- x[2]
-  
-  if (vary == "r") {
-    with(
-      as.list(params),
-      {
-        dP <- runif(1, 10, 130)*P - k*X*P
-        dX <- a - d*X + y*k*X*P
-        
-        res <- c(dP, dX)
-        list(res)
-      }
-    )
-  } else if (vary == "y") {
-    with(
-      as.list(params),
-      {
-        dP <- r*P - k*X*P
-        dX <- a - d*X + runif(1, .5 * 10^-4, 1.5 * 10^-4)*k*X*P
-        
-        res <- c(dP, dX)
-        list(res)
-      }
-    )
-  } else {
-    with(
-      as.list(params),
-      {
-        dP <- runif(1, 10, 130)*P - k*X*P
-        dX <- a - d*X + runif(1, .5 * 10^-4, 1.5 * 10^-4)*k*X*P
-        
-        res <- c(dP, dX)
-        list(res)
-      }
-    )
-  }
-  
-
 }
 
 transmission.potential <- function(k, P) {
