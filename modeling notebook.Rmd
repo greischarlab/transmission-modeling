@@ -35,21 +35,29 @@ transmission.potential <- function(k, P) {
 }
 ```
 
-Assuming that pathogen clearance is reached as soon as pathogen load reaches 0, I only plot transmission potential when pathogen load is positive. 
+These first three sets of parameters were used in King et al., and I use them here to 1) plot immune response over time and 2) plot a simple model of transmission where symptoms are determined by a pathogen load threshold (explained below). I varied the infectious dose values by a factor of 10^2, set the time steps as 0.01 from 0 to 10 units and the proportionality constant between pathogen load and transmission potential to 10^-3, and differentiated the infectious doses by color (light grey to black). 
 ```{r}
-plot.transmission.lines <- function(df, k, color) {
-  df=df[df$P > 0,]
-  transmission= transmission.potential(k, df$P)
-  lines(df$time, transmission, col=color)
-}
+params40 <- c(r=40, k=3.5, y=10^-4, a=1, d=.5)
+params70 <- c(r=70, k=3.5, y=10^-4, a=1, d=.5)
+params100 <- c(r=100, k=3.5, y=10^-4, a=1, d=.5)
+time <- seq(0,10, by=0.01)
+lowid <- 1
+medid <- 100
+highid <- 10000
+ids <- data.frame(low=lowid, med=medid, high=highid)
+lowcolor <- "black"
+medcolor <- "#a3a3a3"
+highcolor <- "#d4d4d4"
+cols <- data.frame(low=lowcolor, med=medcolor, high=highcolor)
+k <- 10^-3
 ```
 
-I plotted immune response over time to visualize immune dynamics over the course of infection.
+I first plotted immune response over time to visualize immune dynamics over the course of infection.
 ```{r}
 plot.immune.response.panel <- function(ids, params, cols, label) {
-  datalow <- data.frame(lsoda(c(P=ids[1], X=0), time, transmission.model, params))
-  datamed <- data.frame(lsoda(c(P=ids[2], X=0), time, transmission.model, params))
-  datahigh <- data.frame(lsoda(c(P=ids[3], X=0), time, transmission.model, params))
+  datalow= data.frame(lsoda(c(P=ids$low, X=0), time, transmission.model, params))
+  datamed= data.frame(lsoda(c(P=ids$med, X=0), time, transmission.model, params))
+  datahigh= data.frame(lsoda(c(P=ids$high, X=0), time, transmission.model, params))
   
   plot(datalow$time, datalow$X, col=cols[1], type="l", ylim=c(0, 300),
        xlab="Time", ylab="Immune Response", main=paste("R value:", params[1]),
@@ -62,7 +70,7 @@ plot.immune.response.panel <- function(ids, params, cols, label) {
 
 #Plotting immune response over time
 
-png("Immune response.png", width=1000, height=900)
+png("./Figures/Immune response.png", width=1000, height=900)
 
 par(mfrow=c(2, 2), mar=c(5.1, 6.1, 4.1, 3.1))
 
@@ -81,30 +89,16 @@ plot.immune.response.panel(ids, params100, cols, "C)")
 dev.off()
 ```
 
-The first model I examine is one in which symptom onset and duration is dependent only on pathogen load. This is represented by a dotted horizontal red line depicting the threshold for symptoms. I am defining presymptomatic transmission as reaching peak transmission potential before symptom onset. This is a conservative way of estimating presymptomatic transmission. Given this definition, there are two cases for transmission in this model: 1) symptoms threshold is below peak pathogen load, and 2) symptoms threshold is above peak pathogen load. The outlier case (symptoms threshold is at peak pathogen load) doesn't signify much--it just suggests that the person is symptomatic only at one point throughout the infection. 
-
+Assuming that pathogen clearance is reached as soon as pathogen load reaches 0, I only plot transmission potential until it first hits 0.
 ```{r}
-params40 <- c(r=40, k=3.5, y=10^-4, a=1, d=.5)
-params70 <- c(r=70, k=3.5, y=10^-4, a=1, d=.5)
-params100 <- c(r=100, k=3.5, y=10^-4, a=1, d=.5)
-time <- seq(0,10, by=0.01)
-#ids <- read.csv("IDs.csv")
-lowid <- 1
-medid <- 100
-highid <- 10000
-ids <- c(lowid, medid, highid)
-lowcolor <- "black"
-medcolor <- "#a3a3a3"
-highcolor <- "#d4d4d4"
-cols <- data.frame(low=lowcolor, med=medcolor, high=highcolor)
-k <- 10^-3
-
-datalow <- data.frame(lsoda(c(P=lowid, X=0), time, transmission.model, params40))
-datamed <- data.frame(lsoda(c(P=medid, X=0), time, transmission.model, params40))
-datahigh <- data.frame(lsoda(c(P=highid, X=0), time, transmission.model, params40))
+plot.transmission.lines <- function(df, k, color) {
+  clearance=min(which(df$P <= 0))
+  transmission= transmission.potential(k, df$P[1:clearance - 1])
+  lines(df$time[1:clearance-1], transmission, col=color)
+}
 ```
 
-I plotted three plots, each with three lines; each plot signifies a different pathogen replication rate (r), and each line signifies a different infectious dose.
+The first model I examine is one in which symptom onset and duration is dependent only on pathogen load. This is represented by a dotted horizontal red line depicting the threshold for symptoms. I am defining presymptomatic transmission as reaching peak transmission potential before symptom onset. This is a conservative way of estimating presymptomatic transmission. Given this definition, there are two cases for transmission in this model: 1) symptoms threshold is below peak pathogen load, and 2) symptoms threshold is above peak pathogen load. The outlier case (symptoms threshold is at peak pathogen load) doesn't signify much--it just suggests that the person is symptomatic only at one point throughout the infection. I plotted three plots, each with three lines; each plot signifies a different pathogen replication rate (r), and each line signifies a different infectious dose.
 ```{r}
 plot.simple.model.panel <- function(symp.thresh, k, datalow, datamed, datahigh, 
                                     cols, label) {
@@ -112,40 +106,49 @@ plot.simple.model.panel <- function(symp.thresh, k, datalow, datamed, datahigh,
   medcolor= cols$med
   highcolor= cols$high
   
-  plot(datalow$time, transmission.potential(k,datalow$P), log='y', ylim=c(1, 10^12), type="l",
-       xlab="", ylab="", cex.lab=2, cex.axis=1.5, col=lowcolor)
-  text(0.05, 3 * 10^11, labels=label, font=2, cex=2)
+  plot(1, type="n", xlab='', ylab='', log='y', xlim=c(0, 0.4), ylim=c(1, 10^4), 
+       cex.lab=2, cex.axis=1.5, cex.main=2)
+  plot.transmission.lines(datalow, k, lowcolor)
   plot.transmission.lines(datamed, k, medcolor)
   plot.transmission.lines(datahigh, k, highcolor)
   abline(h=symp.thresh, lty=3, col="red")
+  text(0.03, 3 * 10^3, labels=label, font=2, cex=2)
   mtext(text="Time", side=1, line=4, cex=2)
   mtext(text="Transmission Potential", side=2, line=4, cex=2)
 }
 
+datalow <- data.frame(lsoda(c(P=lowid, X=0), time, transmission.model, params40))
+datamed <- data.frame(lsoda(c(P=medid, X=0), time, transmission.model, params40))
+datahigh <- data.frame(lsoda(c(P=highid, X=0), time, transmission.model, params40))
+
 #Case 1: Symptoms threshold is below transmission threshold
 
-png("Simple Model.png", width=1000, height=700)
-par(mfrow=c(1, 2), mar=c(5.1, 6.1, 4.1, 3.1))
-symp.thresh1 <- 100
-#plot(1, type="n", xlab='', ylab='', log="y", xlim=c(0, 0.5), ylim=c(1,10^12), cex.axis=2)
-#lapply(dfs, plot.transmission.lines, k=k[2])
-plot.simple.model.panel(symp.thresh1, k, datalow, datamed, datahigh, cols, "A)")
+{
+  png("./Figures/Simple Model.png", width=1000, height=700)
+  par(mfrow=c(1, 2), mar=c(5.1, 6.1, 4.1, 3.1))
+  symp.thresh1 <- 50
+  
+  { 
+  
+    plot.simple.model.panel(symp.thresh1, k, datalow, datamed, datahigh, cols, "A)")
+    
+    legend(0.1, 9 * 10^3, 
+           title="Relative Infectious Dose",
+           legend=c("1", "100", "10000", "Symptom threshold"), 
+           lty= c(1, 1, 1, 3, 3), col=c(cols$low, cols$med, cols$high, "red"), lwd=3, 
+           cex=1.5, text.font=2) 
+  }
+  
 
-legend(0.13, 5 * 10^11, 
-       title="Relative Infectious Dose",
-       legend=c("1", "100", "10000", "Symptom threshold"), 
-       lty= c(1, 1, 1, 3, 3), col=c(cols$low, cols$med, cols$high, "red"), lwd=3, 
-       cex=1.5, text.font=2)
-
-dev.off()
 
 #Case 2: Symptoms threshold is above transmission threshold
 
-symp.thresh2 <- 1000
-
-plot.simple.model.panel(symp.thresh2, datalow, datamed, datahigh, cols, "B)")
-
-dev.off()
+  symp.thresh2 <- 1000
+  
+  plot.simple.model.panel(symp.thresh2, k, datalow, datamed, datahigh, cols, "B)")
+  
+  dev.off()
+}
 
 ```
 
@@ -155,9 +158,9 @@ plot.immune.model.panel <- function(symp.thresh, r, label, cols, y, vary) {
   par(mar=c(5.1, 6.1, 4.1, 3.1))
   params=c(r=r, k=3.5, y=y, a=1, d=.5)
   
-  datalow <- data.frame(lsoda(c(P=lowid, X=0), time, transmission.model, params))
-  datamed <- data.frame(lsoda(c(P=medid, X=0), time, transmission.model, params))
-  datahigh <- data.frame(lsoda(c(P=highid, X=0), time, transmission.model, params))
+  datalow= data.frame(lsoda(c(P=lowid, X=0), time, transmission.model, params))
+  datamed= data.frame(lsoda(c(P=medid, X=0), time, transmission.model, params))
+  datahigh=- data.frame(lsoda(c(P=highid, X=0), time, transmission.model, params))
   
   dfs <- list(datalow, datamed, datahigh)
   
@@ -189,7 +192,7 @@ symp.thresh <- 5
 
 r <- seq(10, 130, by=10)
 
-png("Immune-based symptoms varying r.png", width=1400, height=1000)
+png("./Figures/Immune-based symptoms varying r.png", width=1400, height=1000)
 
 par(mfrow=c(3, 4), mar=c(5.1, 6.1, 4.1, 3.1))
 
@@ -218,7 +221,7 @@ symp.thresh <- 5
 
 y <- seq(.5 * 10^-4, 1.5*10^-4, by=.1*10^-4)
 
-png("Immune-based symptoms varying y many.png", width=1600, height=1000)
+png("./Figures/Immune-based symptoms varying y many.png", width=1600, height=1000)
 
 par(mfrow=c(3, 4), mar=c(5.1, 6.1, 4.1, 3.1))
 
