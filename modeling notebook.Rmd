@@ -226,6 +226,7 @@ dev.off()
 On 11/05/21, I'm going to vary gamma and r and plot transmission potential against time for 3 infectious doses.
 
 ```{r}
+symp.thresh <- 5
 gamma_variable <- c(0.5 * 10^-4, 10^-4, 1.5 * 10^-4)
 r_variable <- c(10, 70, 130)
 
@@ -235,7 +236,7 @@ desolve_function <- function(gamma, r, id) {
   time= seq(0,2, by=0.01)
   parameter_value = c(y=gamma, r=r, a=1, d=.5, k=3.5)
   df = data.frame(lsoda(c(P=id, X=0), time, transmission.model, parameter_value))
-  tp = data.frame(time=time, transmission_potential=transmission.potential(10^-3, df$P), gamma, r)
+  tp = data.frame(time=time, transmission_potential=transmission.potential(10^-3, df$P), immune=df$X, gamma, r)
   return(tp)
 }
 
@@ -244,16 +245,21 @@ lowdose <- mapply(desolve_function, gamma_r$gamma, gamma_r$r, id=1, SIMPLIFY = F
 
 lowdose_full <- do.call(rbind, lowdose)
 
+symptomaticlow <- lowdose_full[lowdose_full$immune >= symp.thresh,]
+
 #meddose is a list
 meddose <- mapply(desolve_function, gamma_r$gamma, gamma_r$r, id=100, SIMPLIFY = FALSE)
 
 meddose_full <- do.call(rbind, meddose)
+
+symptomaticmed <- meddose_full[meddose_full$immune >= symp.thresh,]
 
 #highdose is a list
 highdose <- mapply(desolve_function, gamma_r$gamma, gamma_r$r, id=10000, SIMPLIFY = FALSE)
 
 highdose_full <- do.call(rbind, highdose)
 
+symptomatichigh <- highdose_full[highdose_full$immune >= symp.thresh,]
 
 ```
 
@@ -268,9 +274,17 @@ cols <- c("1"="#009E73", "100"="#871a6e", "10000"="#E69F00")
   
 ggplot(NULL, aes(x=time, y=transmission_potential)) +
   facet_wrap(gamma~r, scales='free', labeller=labeller(gamma=gamma.labs, r=r.labs)) + 
+  
+  #Transmission potential lines
   geom_line(data=lowdose_full, aes(colour= "1")) +
   geom_line(data=meddose_full, aes(colour="100")) + 
   geom_line(data=highdose_full, aes(colour="10000")) + 
+  
+  #Bolded transmission potential lines where symptoms occur
+  geom_line(data=symptomaticlow, aes(colour= "1"), lwd=1.1) +
+  geom_line(data=symptomaticmed, aes(colour="100"), lwd=1.1) + 
+  geom_line(data=symptomatichigh, aes(colour="10000"), lwd=1.1) + 
+  
   xlab("Time") + ylab("Transmission Potential") +
   theme(strip.background = element_rect(fill="lightblue")) +
   scale_color_manual(name="Relative Infectious Dose", values = cols)
