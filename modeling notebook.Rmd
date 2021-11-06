@@ -96,26 +96,6 @@ plot.immune.response.panel <- function(ids, params, cols, label) {
   lines(datahigh$time, datahigh$X, col=cols[3])
 }
 
-plot.stochastic.model <- function(params, vary) {
-  par(mar=c(5.1, 6.1, 4.1, 3.1))
-  
-  plot(1, type="n", xlab='', ylab='', log='y', xlim=c(0, 10), ylim=c(1, 10^4), 
-       cex.lab=2, cex.axis=1.5, cex.main=2)
-  
-  mtext(text="Time", side=1, line=4, cex=2)
-  mtext(text="Transmission Potential", side=2, line=4, cex=2)
-  mtext(text=paste("Stochastic Model of Transmission Potential with Varying ", vary, " Values"), 
-        side=3, line=2, cex=2)
-  
-  for (i in seq(1, 99, by=1)) {
-    df.stochastic <- data.frame(lsoda(c(P=lowid, X=0), time, 
-                                      transmission.model.stochastic, params, vary=vary))
-    
-    lines(df.stochastic$time, transmission.potential(k, df.stochastic$P))
-  }
-  
-}
-
 
 #Disproving simple model (everything depends on viral load only)
 
@@ -239,25 +219,6 @@ for (i in seq(1, 11)) {
 
 dev.off()
 
-#Stochastic model
-
-png("Stochastic Model varying r.png", width=800, height=700)
-params.stochastic <- c(k=3.5, y=10^-4, a=1, d=.5)
-
-plot.stochastic.model(params.stochastic, "r")
-dev.off()
-
-png("Stochastic Model varying y.png", width=800, height=700)
-params.stochastic <- c(r=40, k=3.5, a=1, d=.5)
-
-plot.stochastic.model(params.stochastic, "y")
-dev.off()
-
-png("Stochastic Model varying both.png", width=800, height=700)
-params.stochastic <- c(k=3.5, a=1, d=.5)
-
-plot.stochastic.model(params.stochastic, "both")
-dev.off()
 ```
 
 # Gamma r reproduction rate Figures
@@ -303,18 +264,17 @@ names(r.labs) <- rep(c("10", "70", "130"), 3)
 gamma.labs <- c(rep("\u03B3: 5e-05", 3), rep("\u03B3: 1e-04", 3), rep("\u03B3: 0.00015", 3))
 names(gamma.labs) <- c(rep("5e-05", 3), rep("1e-04", 3), rep("0.00015", 3))
 
-ggplot(lowdose_full, aes(x=time, y=transmission_potential)) +
-  geom_line() + facet_wrap(gamma~r, scales='free', labeller=labeller(gamma=gamma.labs, r=r.labs)) + 
+cols <- c("1"="#009E73", "100"="#871a6e", "10000"="#E69F00")
+  
+ggplot(NULL, aes(x=time, y=transmission_potential)) +
+  facet_wrap(gamma~r, scales='free', labeller=labeller(gamma=gamma.labs, r=r.labs)) + 
+  geom_line(data=lowdose_full, aes(colour= "1")) +
+  geom_line(data=meddose_full, aes(colour="100")) + 
+  geom_line(data=highdose_full, aes(colour="10000")) + 
   xlab("Time") + ylab("Transmission Potential") +
-  theme(strip.background = element_rect(fill="lightblue"))
+  theme(strip.background = element_rect(fill="lightblue")) +
+  scale_color_manual(name="Relative Infectious Dose", values = cols)
 
-ggplot(meddose_full, aes(x=time, y=transmission_potential)) +
-  geom_line() + facet_wrap(gamma~r, scales='free', labeller=labeller(gamma=gamma.labs, r=r.labs)) + 
-  xlab("Time") + ylab("Transmission Potential") +
-  theme(strip.background = element_rect(fill="lightblue"))
+ggsave("./Figures/Varying r and y 9 plots.png")
 
-ggplot(highdose_full, aes(x=time, y=transmission_potential)) +
-  geom_line() + facet_wrap(gamma~r, scales='free', labeller=labeller(gamma=gamma.labs, r=r.labs)) + 
-  xlab("Time") + ylab("Transmission Potential") +
-  theme(strip.background = element_rect(fill="lightblue"))
 ```
