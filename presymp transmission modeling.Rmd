@@ -248,73 +248,107 @@ dev.off()
 
 # Gamma r reproduction rate Figures
 
-On 11/05/21, I'm going to vary gamma and r and plot transmission potential against time for 3 infectious doses.
+On 11/08/21, I'm going to vary gamma and r and plot transmission potential against time for 3 infectious doses. 
 
 ```{r}
 symp.thresh <- 5
-gamma_variable <- c(0.5 * 10^-4, 10^-4, 1.5 * 10^-4)
-r_variable <- c(10, 70, 130)
+gamma_variable <- rep(c(0.5 * 10^-4, 10^-4, 1.5 * 10^-4), 3)
+r_variable <- rep(c(10, 70, 130), 3)
+dose <- c(rep(1, 3), rep(100, 3), rep(10000, 3))
 
-gamma_r <- expand.grid(gamma=gamma_variable, r=r_variable)
+varyingr <- data.frame(gamma= gamma_variable[2], r=r_variable, dose=dose)
+
+varyingy <- data.frame(gamma=gamma_variable, r=r_variable[2], dose=dose)
 
 desolve_function <- function(gamma, r, id) {
-  time= seq(0,2, by=0.01)
+  time= seq(0,2, by=0.001)
   parameter_value = c(y=gamma, r=r, a=1, d=.5, k=3.5)
   df = data.frame(lsoda(c(P=id, X=0), time, transmission.model, parameter_value))
-  tp = data.frame(time=time, transmission_potential=transmission.potential(10^-3, df$P), immune=df$X, gamma, r)
+  tp = data.frame(time=time, transmission_potential=transmission.potential(10^-3, df$P), immune=df$X, gamma=gamma, r=r, dose=id)
   return(tp)
 }
 
-#lowdose is a list
-lowdose <- mapply(desolve_function, gamma_r$gamma, gamma_r$r, id=1, SIMPLIFY = FALSE)
+#varyingr is a list
+varyingr <- mapply(desolve_function, varyingr$gamma, varyingr$r, id=varyingr$dose, SIMPLIFY = FALSE)
 
-lowdose_full <- do.call(rbind, lowdose)
+varyingr <- do.call(rbind, varyingr)
 
-symptomaticlow <- lowdose_full[lowdose_full$immune >= symp.thresh,]
+symptomaticvaryingr <- varyingr[varyingr$immune >= symp.thresh,]
+symp.lowr <- symptomaticvaryingr[symptomaticvaryingr$r == r_variable[1],]
+symp.medr <- symptomaticvaryingr[symptomaticvaryingr$r == r_variable[2],]
+symp.highr <- symptomaticvaryingr[symptomaticvaryingr$r == r_variable[3],]
 
-#meddose is a list
-meddose <- mapply(desolve_function, gamma_r$gamma, gamma_r$r, id=100, SIMPLIFY = FALSE)
+#varyingy is a list
+varyingy <- mapply(desolve_function, varyingy$gamma, varyingy$r, id=varyingy$dose, SIMPLIFY = FALSE)
 
-meddose_full <- do.call(rbind, meddose)
+varyingy <- do.call(rbind, varyingy)
 
-symptomaticmed <- meddose_full[meddose_full$immune >= symp.thresh,]
-
-#highdose is a list
-highdose <- mapply(desolve_function, gamma_r$gamma, gamma_r$r, id=10000, SIMPLIFY = FALSE)
-
-highdose_full <- do.call(rbind, highdose)
-
-symptomatichigh <- highdose_full[highdose_full$immune >= symp.thresh,]
+symptomaticvaryingy <- varyingy[varyingy$immune >= symp.thresh,]
+symp.lowgamma <- symptomaticvaryingy[symptomaticvaryingy$gamma == gamma_variable[1],]
+symp.medgamma <- symptomaticvaryingy[symptomaticvaryingy$gamma == gamma_variable[2],]
+symp.highgamma <- symptomaticvaryingy[symptomaticvaryingy$gamma == gamma_variable[3],]
 
 ```
 
-Here, I plot the results:
+Here, I plot the results. Each row is a different infectious dose. The left column varies r, and the right column varies gamma.
 ```{r}
-r.labs <- rep(c("r: 10", "r: 70", "r: 130"), 9)
-names(r.labs) <- rep(c("10", "70", "130"), 3)
+gamma <- "\u03B3"
 
-gamma.labs <- c(rep("\u03B3: 5e-05", 3), rep("\u03B3: 1e-04", 3), rep("\u03B3: 0.00015", 3))
-names(gamma.labs) <- c(rep("5e-05", 3), rep("1e-04", 3), rep("0.00015", 3))
+colsr <- c("10"="red", "70"="purple", "130"="orange")
 
-cols <- c("1"="#009E73", "100"="#871a6e", "10000"="#E69F00")
+colsgamma <- c("5e-05"="black", "1e-04"="green", "0.00015"="blue")
   
-ggplot(NULL, aes(x=time, y=transmission_potential)) +
-  facet_wrap(gamma~r, scales='free', labeller=labeller(gamma=gamma.labs, r=r.labs)) + 
+idlabels <- c("Infectious Dose: 1",
+              "Infectious Dose: 100",
+              "Infectious Dose: 10000")
+names(idlabels) <- c("1", "100", "10000")
+
+varyingr.plot <- ggplot(NULL, aes(x=time, y=transmission_potential)) + 
+  xlim(0, 1.8) +
+  geom_line(data=varyingr[varyingr$r==r_variable[1],], aes(colour=toString(r_variable[1]))) +
+  geom_line(data=varyingr[varyingr$r==r_variable[2],], aes(colour=toString(r_variable[2]))) +
+  geom_line(data=varyingr[varyingr$r==r_variable[3],], aes(colour=toString(r_variable[3]))) +
+  facet_wrap(~ dose, ncol=1, labeller=labeller(dose=idlabels)) +
+  #Bolded transmission potential lines where symptoms occur
+  geom_line(data=symp.lowr, aes(colour= toString(r_variable[1])), lwd=1.1) +
+  geom_line(data=symp.medr, aes(colour= toString(r_variable[2])), lwd=1.1) +
+  geom_line(data=symp.highr, aes(colour= toString(r_variable[3])), lwd=1.1) +
   
-  #Transmission potential lines
-  geom_line(data=lowdose_full, aes(colour= "1")) +
-  geom_line(data=meddose_full, aes(colour="100")) + 
-  geom_line(data=highdose_full, aes(colour="10000")) + 
+  xlab("Time") + ylab("Transmission Potential") + 
+  scale_color_manual(name="Pathogen replication rate (r)", values = colsr) +
+  theme(strip.background = element_rect(fill="lightblue"), 
+        legend.position=c(.7, .15)) 
+
+varyingy.plot <- ggplot(NULL, aes(x=time, y=transmission_potential)) + 
+  xlim(0, 0.25) +
+  geom_line(data=varyingy[varyingy$gamma==gamma_variable[1],],
+            aes(colour=toString(gamma_variable[1]))) +
+  geom_line(data=varyingy[varyingy$gamma==gamma_variable[2],], 
+            aes(colour=toString(gamma_variable[2]))) +
+  geom_line(data=varyingy[varyingy$gamma==gamma_variable[3],], 
+            aes(colour=toString(gamma_variable[3]))) +
+  facet_wrap(~ dose, ncol=1, labeller=labeller(dose=idlabels)) +
   
   #Bolded transmission potential lines where symptoms occur
-  geom_line(data=symptomaticlow, aes(colour= "1"), lwd=1.1) +
-  geom_line(data=symptomaticmed, aes(colour="100"), lwd=1.1) + 
-  geom_line(data=symptomatichigh, aes(colour="10000"), lwd=1.1) + 
+  geom_line(data=symp.lowgamma, 
+            aes(colour= toString(gamma_variable[1])), lwd=1.1) +
+  geom_line(data=symp.medgamma, 
+            aes(colour= toString(gamma_variable[2])), lwd=1.1) +
+  geom_line(data=symp.highgamma, 
+            aes(colour= toString(gamma_variable[3])), lwd=1.1) +
   
-  xlab("Time") + ylab("Transmission Potential") +
-  theme(strip.background = element_rect(fill="lightblue")) +
-  scale_color_manual(name="Relative Infectious Dose", values = cols)
+  xlab("Time") +  ylab("") +
+  theme(axis.ticks.y=element_blank(),
+        axis.text.y=element_blank(),
+        strip.background = element_rect(fill="lightblue"),
+        legend.position=c(.7, .15)) +
+  scale_color_manual(name=
+                       paste("Immune response recruitment rate (", gamma, ")", 
+                             sep=""),
+                       values = colsgamma)
 
-ggsave("./Figures/Varying r and y 9 plots.png")
+grid.arrange(varyingr.plot, varyingy.plot, ncol=2)
+
+ggsave("./Figures/Varying r and y 6 panels.png")
 
 ```

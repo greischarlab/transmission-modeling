@@ -15,20 +15,9 @@ atmardata <- metaDigitise("~/Research Project/Summer URE/Process Images",
 atmardata= atmardata$scatterplot$plotd.jpg
 ```
 
+These are all the functions I used to optimize parameters for the Li model I fit
+to the Atmar data.
 ```{r}
-generate.estimates <- function(params, t) {
-  
-  p1= exp(params[1])
-  p2= exp(params[2])
-  p3= exp(params[3])
-  p4= exp(params[4])
-  
-  estimate= (2 * p1) / (exp(-p2*(t-p3)) + exp(p4*(t-p3)))
-  
-  return(log10(estimate))
-  
-} 
-
 sse.viralLoad <- function(params, data) {
   vl = log10(data$y)
   t = data$x * 24 - 19
@@ -44,6 +33,19 @@ sse.viralLoad <- function(params, data) {
   }
   
 }
+
+generate.estimates <- function(params, t) {
+  
+  p1= exp(params[1])
+  p2= exp(params[2])
+  p3= exp(params[3])
+  p4= exp(params[4])
+  
+  estimate= (2 * p1) / (exp(-p2*(t-p3)) + exp(p4*(t-p3)))
+  
+  return(log10(estimate))
+  
+} 
 
 get.params <- function(data) {
   
@@ -79,6 +81,10 @@ generate.possible.params <- function(data) {
   return(fits)
 }
 
+```
+
+
+```{r}
 plot.optimization <- function(data) {
   fits= generate.possible.params(data)
   t=data$x * 24 - 19
