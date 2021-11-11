@@ -12,7 +12,7 @@ require(deSolve)
 require(ggplot2)
 ```
 
-Here, I have my ODE model and a function for calculating transmission potential from pathogen load. I assume transmission potential is directly proportional to pathogen load via a constant k.
+Here, I have my ODE model, a function for calculating transmission potential from pathogen load, and a function for creating a dataframe containing the reuslts of the model. I assume transmission potential is directly proportional to pathogen load via a constant k.
 ```{r}
 transmission.model <- function(t, x, params) {
   P <- x[1]
@@ -33,6 +33,13 @@ transmission.model <- function(t, x, params) {
 transmission.potential <- function(k, P) {
   return(ifelse(k*P < 0, 0, k*P))
 }
+
+df <- function(id, time, params) {
+  df= data.frame(lsoda(c(P=id, X=0), time, transmission.model, params))
+  clearance=min(which(df$P <= 0))
+  df= df[1:clearance-1]
+  return(df)
+}
 ```
 
 These first three sets of parameters were used in King et al., and I use them here to 1) plot immune response over time and 2) plot a simple model of transmission where symptoms are determined by a pathogen load threshold (explained below). I varied the infectious dose values by a factor of 10^2, set the time steps as 0.01 from 0 to 10 units and the proportionality constant between pathogen load and transmission potential to 10^-3, and differentiated the infectious doses by color (light grey to black). 
@@ -40,7 +47,7 @@ These first three sets of parameters were used in King et al., and I use them he
 params40 <- c(r=40, k=3.5, y=10^-4, a=1, d=.5)
 params70 <- c(r=70, k=3.5, y=10^-4, a=1, d=.5)
 params100 <- c(r=100, k=3.5, y=10^-4, a=1, d=.5)
-time <- seq(0,10, by=0.01)
+time <- seq(0,5, by=0.001)
 lowid <- 1
 medid <- 100
 highid <- 10000
@@ -54,10 +61,10 @@ k <- 10^-3
 
 I first plotted immune response over time to visualize immune dynamics over the course of infection.
 ```{r}
-plot.immune.response.panel <- function(ids, params, cols, label) {
-  datalow= data.frame(lsoda(c(P=ids$low, X=0), time, transmission.model, params))
-  datamed= data.frame(lsoda(c(P=ids$med, X=0), time, transmission.model, params))
-  datahigh= data.frame(lsoda(c(P=ids$high, X=0), time, transmission.model, params))
+plot.immune.response.panel <- function(ids, params, cols, label, time) {
+  datalow= df(ids$low, time, params)
+  datamed= df(ids$med, time, params)
+  datahigh= df(ids$high, time, params)
   
   plot(datalow$time, datalow$X, col=cols[1], type="l", ylim=c(0, 300),
        xlab="Time", ylab="Immune Response", main=paste("R value:", params[1]),
@@ -74,7 +81,7 @@ png("./Figures/Immune response.png", width=1000, height=900)
 
 par(mfrow=c(2, 2), mar=c(5.1, 6.1, 4.1, 3.1))
 
-plot.immune.response.panel(ids, params40, cols, "A)")
+plot.immune.response.panel(ids, params40, cols, "A)", time)
 
 legend(0.18, 290, 
        title="Relative Infectious Dose",
@@ -89,12 +96,17 @@ plot.immune.response.panel(ids, params100, cols, "C)")
 dev.off()
 ```
 
+On 11/10/21, I constructed a function to determine peak immune response for applicable combinations of r and gamma values. Using this value, I then determined three thresholds for determinine symptoms--above peak immune response, below, and right at it.
+```{r}
+peak.immuneresponse <- function(id, time, params) {
+  data = df(id, time, params)
+  data = max(data$X)
+}
+```
 Assuming that pathogen clearance is reached as soon as pathogen load reaches 0, I only plot transmission potential until it first hits 0.
 ```{r}
 plot.transmission.lines <- function(df, k, color) {
-  clearance=min(which(df$P <= 0))
-  transmission= transmission.potential(k, df$P[1:clearance - 1])
-  lines(df$time[1:clearance-1], transmission, col=color)
+  lines(df$time, transmission.potential(k, df$P), col=color)
 }
 ```
 
