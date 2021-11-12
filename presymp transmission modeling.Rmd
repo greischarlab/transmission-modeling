@@ -294,17 +294,16 @@ get.params <- function(gamma, r) {
   return (c(y=gamma, r=r, a=1, d=.5, k=3.5))
 }
 
-desolve_function <- function(gamma, r, id, time) {
+desolve_function <- function(gamma, r, id) {
+  time <- seq(0,2, by=0.001)
   parameter_value = get.params(gamma, r)
   df = cutter(id, time, parameter_value)
   tp = data.frame(time=time, transmission_potential=transmission.potential(10^-3, df$P), immune=df$X, gamma=gamma, r=r, dose=id)
   return(tp)
 }
 
-time <- seq(0,2, by=0.001)
-
 #varyingr is a list
-varyingr <- do.call(rbind, mapply(desolve_function, varyingr$gamma, varyingr$r, varyingr$dose, time, SIMPLIFY = FALSE))
+varyingr <- do.call(rbind, mapply(desolve_function, varyingr$gamma, varyingr$r, varyingr$dose, SIMPLIFY = FALSE))
 
 lowr <- varyingr[varyingr$r == r_variable[1],] 
 params.lowr <- get.params(gamma_variable[2], r_variable[1])
@@ -313,13 +312,13 @@ symptomatic.lowr.highthresh <- symptomatic.df(lowr, 'high')
 
 medr <- varyingr[varyingr$r == r_variable[2],] 
 params.medr <- get.params(gamma_variable[2], r_variable[2])
-symptomatic.medr.lowthresh <- symptomatic.df(medr.lowdose, 'low')
-symptomatic.medr.highthresh <- symptomatic.df(medr.lowdose, 'high')
+symptomatic.medr.lowthresh <- symptomatic.df(medr, 'low')
+symptomatic.medr.highthresh <- symptomatic.df(medr, 'high')
 
-highr <- varyingr[varyingr$r == r_variable[1],] 
-params.highr <- get.params(gamma_variable[2], r_variable[1])
-symptomatic.highr.lowthresh <- symptomatic.df(highr.lowdose, 'low')
-symptomatic.highr.highthresh <- symptomatic.df(highr.lowdose, 'high')
+highr <- varyingr[varyingr$r == r_variable[3],] 
+params.highr <- get.params(gamma_variable[2], r_variable[3])
+symptomatic.highr.lowthresh <- symptomatic.df(highr, 'low')
+symptomatic.highr.highthresh <- symptomatic.df(highr, 'high')
 
 #varyingy is a list
 varyingy <- mapply(desolve_function, varyingy$gamma, varyingy$r, id=varyingy$dose, SIMPLIFY = FALSE)
@@ -349,15 +348,15 @@ names(idlabels) <- c("1", "100", "10000")
 plot.varyingr <- function(lowr.df, medr.df, highr.df, symp.lowr.df, symp.medr.df, symp.highr.df) {
   ggplot(NULL, aes(x=time, y=transmission_potential)) + 
   xlim(0, 1.8) +
-  geom_line(data=lowr.df, aes(colour=lowr)) +
-  geom_line(data=medr.df, aes(colour=medr)) +
-  geom_line(data=highr.df, aes(colour=highr)) +
+  geom_line(data=lowr.df, aes(colour=toString(lowr.df$r[1]))) +
+  geom_line(data=medr.df, aes(colour=toString(medr.df$r[1]))) +
+  geom_line(data=highr.df, aes(colour=toString(highr.df$r[1]))) +
   facet_wrap(~ dose, ncol=1, labeller=labeller(dose=idlabels)) +
   
   #Bolded transmission potential lines where symptoms occur
-  geom_line(data=symp.lowr.df, aes(colour=lowr, lwd=1.1)) +
-  geom_line(data=symp.medr.df, aes(colour=medr, lwd=1.1)) +
-  geom_line(data=symp.highr.df, aes(colour=highr, lwd=1.1)) +
+  geom_line(data=symp.lowr.df, aes(colour=toString(lowr.df$r[1])), lwd=1.5) +
+  geom_line(data=symp.medr.df, aes(colour=toString(medr.df$r[1])), lwd=1.5) +
+  geom_line(data=symp.highr.df, aes(colour=toString(highr.df$r[1])),lwd=1.5) +
   
   xlab("Time") + ylab("Transmission Potential") + 
   scale_color_manual(name="Pathogen replication rate (r)", values = colsr) +
@@ -365,7 +364,8 @@ plot.varyingr <- function(lowr.df, medr.df, highr.df, symp.lowr.df, symp.medr.df
         legend.position=c(.7, .15)) 
 }
 
-varyingr.plot.lowthresh <- plot.varyingr(lowr)
+varyingr.plot.lowthresh <- plot.varyingr(lowr, medr, highr, 
+                                         symptomatic.lowr.lowthresh, symptomatic.medr.lowthresh, symptomatic.highr.lowthresh)
 
 varyingy.plot <- ggplot(NULL, aes(x=time, y=transmission_potential)) + 
   xlim(0, 0.25) +
