@@ -34,10 +34,12 @@ transmission.potential <- function(k, P) {
   return(ifelse(k*P < 0, 0, k*P))
 }
 
-df <- function(id, time, params) {
-  df= data.frame(lsoda(c(P=id, X=0), time, transmission.model, params))
-  clearance=min(which(df$P <= 0))
-  df= df[1:clearance-1]
+cutter <- function(dose, time, params) {
+  df= data.frame(lsoda(c(P=dose, X=0), time, transmission.model, params))
+  if(any(df$P) <= 0){
+    clearance = min(which(df$P <= 0))
+    df[clearance:length(time)] = NA
+  }
   return(df)
 }
 ```
@@ -62,9 +64,9 @@ k <- 10^-3
 I first plotted immune response over time to visualize immune dynamics over the course of infection.
 ```{r}
 plot.immune.response.panel <- function(ids, params, cols, label, time) {
-  datalow= df(ids$low, time, params)
-  datamed= df(ids$med, time, params)
-  datahigh= df(ids$high, time, params)
+  datalow= cutter(ids$low, time, params)
+  datamed= cutter(ids$med, time, params)
+  datahigh= cutter(ids$high, time, params)
   
   plot(datalow$time, datalow$X, col=cols[1], type="l", ylim=c(0, 300),
        xlab="Time", ylab="Immune Response", main=paste("R value:", params[1]),
@@ -96,11 +98,28 @@ plot.immune.response.panel(ids, params100, cols, "C)")
 dev.off()
 ```
 
-On 11/10/21, I constructed a function to determine peak immune response for applicable combinations of r and gamma values. Using this value, I then determined three thresholds for determinine symptoms--above peak immune response, below, and right at it.
+I constructed a function to determine peak immune response for applicable combinations of r and gamma values. Using this value, I then determined two thresholds for determining symptoms--below, and right at it--via another function.
 ```{r}
-peak.immuneresponse <- function(id, time, params) {
-  data = df(id, time, params)
-  data = max(data$X)
+peak.immuneresponse <- function(data) {
+  peak = max(data$immune)
+  return(peak)
+}
+
+symp.thresh <- function(data, thresh.type) {
+  peak.immune <- peak.immuneresponse(data)
+  
+  if(thresh.type == 'h') {
+    return (peak.immune)
+  } else {
+    return(peak.immune - 5)
+  }
+}
+
+symptomatic.df <- function(data, thresh.type) {
+  threshold = symp.thresh(data, thresh.type)
+  symp= data[data$immune >= threshold,]
+  
+  return(symp)
 }
 ```
 Assuming that pathogen clearance is reached as soon as pathogen load reaches 0, I only plot transmission potential until it first hits 0.
@@ -129,7 +148,7 @@ plot.simple.model.panel <- function(symp.thresh, k, datalow, datamed, datahigh,
   mtext(text="Transmission Potential", side=2, line=4, cex=2)
 }
 
-datalow <- data.frame(lsoda(c(P=lowid, X=0), time, transmission.model, params40))
+datalow <- cutter(lowid, time, params40)
 datamed <- data.frame(lsoda(c(P=medid, X=0), time, transmission.model, params40))
 datahigh <- data.frame(lsoda(c(P=highid, X=0), time, transmission.model, params40))
 
@@ -262,8 +281,7 @@ dev.off()
 
 On 11/08/21, I'm going to vary gamma and r and plot transmission potential against time for 3 infectious doses. 
 
-```{r}
-symp.thresh <- 5
+```{r}  
 gamma_variable <- rep(c(0.5 * 10^-4, 10^-4, 1.5 * 10^-4), 3)
 r_variable <- rep(c(10, 70, 130), 3)
 dose <- c(rep(1, 3), rep(100, 3), rep(10000, 3))
@@ -272,23 +290,36 @@ varyingr <- data.frame(gamma= gamma_variable[2], r=r_variable, dose=dose)
 
 varyingy <- data.frame(gamma=gamma_variable, r=r_variable[2], dose=dose)
 
-desolve_function <- function(gamma, r, id) {
-  time= seq(0,2, by=0.001)
-  parameter_value = c(y=gamma, r=r, a=1, d=.5, k=3.5)
-  df = data.frame(lsoda(c(P=id, X=0), time, transmission.model, parameter_value))
+get.params <- function(gamma, r) {
+  return (c(y=gamma, r=r, a=1, d=.5, k=3.5))
+}
+
+desolve_function <- function(gamma, r, id, time) {
+  parameter_value = get.params(gamma, r)
+  df = cutter(id, time, parameter_value)
   tp = data.frame(time=time, transmission_potential=transmission.potential(10^-3, df$P), immune=df$X, gamma=gamma, r=r, dose=id)
   return(tp)
 }
 
+time <- seq(0,2, by=0.001)
+
 #varyingr is a list
-varyingr <- mapply(desolve_function, varyingr$gamma, varyingr$r, id=varyingr$dose, SIMPLIFY = FALSE)
+varyingr <- do.call(rbind, mapply(desolve_function, varyingr$gamma, varyingr$r, varyingr$dose, time, SIMPLIFY = FALSE))
 
-varyingr <- do.call(rbind, varyingr)
+lowr <- varyingr[varyingr$r == r_variable[1],] 
+params.lowr <- get.params(gamma_variable[2], r_variable[1])
+symptomatic.lowr.lowthresh <- symptomatic.df(lowr, 'low')
+symptomatic.lowr.highthresh <- symptomatic.df(lowr, 'high')
 
-symptomaticvaryingr <- varyingr[varyingr$immune >= symp.thresh,]
-symp.lowr <- symptomaticvaryingr[symptomaticvaryingr$r == r_variable[1],]
-symp.medr <- symptomaticvaryingr[symptomaticvaryingr$r == r_variable[2],]
-symp.highr <- symptomaticvaryingr[symptomaticvaryingr$r == r_variable[3],]
+medr <- varyingr[varyingr$r == r_variable[2],] 
+params.medr <- get.params(gamma_variable[2], r_variable[2])
+symptomatic.medr.lowthresh <- symptomatic.df(medr.lowdose, 'low')
+symptomatic.medr.highthresh <- symptomatic.df(medr.lowdose, 'high')
+
+highr <- varyingr[varyingr$r == r_variable[1],] 
+params.highr <- get.params(gamma_variable[2], r_variable[1])
+symptomatic.highr.lowthresh <- symptomatic.df(highr.lowdose, 'low')
+symptomatic.highr.highthresh <- symptomatic.df(highr.lowdose, 'high')
 
 #varyingy is a list
 varyingy <- mapply(desolve_function, varyingy$gamma, varyingy$r, id=varyingy$dose, SIMPLIFY = FALSE)
@@ -315,21 +346,26 @@ idlabels <- c("Infectious Dose: 1",
               "Infectious Dose: 10000")
 names(idlabels) <- c("1", "100", "10000")
 
-varyingr.plot <- ggplot(NULL, aes(x=time, y=transmission_potential)) + 
+plot.varyingr <- function(lowr.df, medr.df, highr.df, symp.lowr.df, symp.medr.df, symp.highr.df) {
+  ggplot(NULL, aes(x=time, y=transmission_potential)) + 
   xlim(0, 1.8) +
-  geom_line(data=varyingr[varyingr$r==r_variable[1],], aes(colour=toString(r_variable[1]))) +
-  geom_line(data=varyingr[varyingr$r==r_variable[2],], aes(colour=toString(r_variable[2]))) +
-  geom_line(data=varyingr[varyingr$r==r_variable[3],], aes(colour=toString(r_variable[3]))) +
+  geom_line(data=lowr.df, aes(colour=lowr)) +
+  geom_line(data=medr.df, aes(colour=medr)) +
+  geom_line(data=highr.df, aes(colour=highr)) +
   facet_wrap(~ dose, ncol=1, labeller=labeller(dose=idlabels)) +
+  
   #Bolded transmission potential lines where symptoms occur
-  geom_line(data=symp.lowr, aes(colour= toString(r_variable[1])), lwd=1.1) +
-  geom_line(data=symp.medr, aes(colour= toString(r_variable[2])), lwd=1.1) +
-  geom_line(data=symp.highr, aes(colour= toString(r_variable[3])), lwd=1.1) +
+  geom_line(data=symp.lowr.df, aes(colour=lowr, lwd=1.1)) +
+  geom_line(data=symp.medr.df, aes(colour=medr, lwd=1.1)) +
+  geom_line(data=symp.highr.df, aes(colour=highr, lwd=1.1)) +
   
   xlab("Time") + ylab("Transmission Potential") + 
   scale_color_manual(name="Pathogen replication rate (r)", values = colsr) +
   theme(strip.background = element_rect(fill="lightblue"), 
         legend.position=c(.7, .15)) 
+}
+
+varyingr.plot.lowthresh <- plot.varyingr(lowr)
 
 varyingy.plot <- ggplot(NULL, aes(x=time, y=transmission_potential)) + 
   xlim(0, 0.25) +
