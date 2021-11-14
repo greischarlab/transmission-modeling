@@ -363,7 +363,7 @@ plot.varyingr <- function(lowr.df, medr.df, highr.df, symp.lowr.df, symp.medr.df
   xlab("Time") + ylab("Transmission Potential") + 
   scale_color_manual(name="Relative Infectious Dose", values = colsr.id) +
   theme(strip.background = element_rect(fill="lightblue"), 
-        legend.position=c(.7, .15)) 
+        legend.position=c(.65, .15)) 
 }
 
 varyingr.plot.lowthresh <- plot.varyingr(lowr, medr, highr, 
@@ -399,7 +399,7 @@ plot.varyingy <- function(lowy.df, medy.df, highy.df, symp.lowy.df, symp.medy.df
   xlab("Time") + ylab("Transmission Potential") + 
   scale_color_manual(name="Relative Infectious Dose", values = colsy.id) +
   theme(strip.background = element_rect(fill="lightblue"), 
-        legend.position=c(.7, .15)) 
+        legend.position=c(.65, .15)) 
 }
 
 varyingy.plot.lowthresh <- plot.varyingy(lowy, medy, highy, 
