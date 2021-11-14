@@ -13,7 +13,7 @@ require(ggplot2)
 require(gridExtra)
 ```
 
-Here, I have my ODE model, a function for calculating transmission potential from pathogen load, and a function for creating a dataframe containing the reuslts of the model. I assume transmission potential is directly proportional to pathogen load via a constant k.
+Here, I have my ODE model, a function for calculating transmission potential from pathogen load, and a function for creating a dataframe containing the results of the model. I assume transmission potential is directly proportional to pathogen load via a constant k. Assuming that pathogen clearance is reached as soon as pathogen load reaches 0, I cut off the dataframe as soon as transmission potential reaches 0.
 ```{r}
 transmission.model <- function(t, x, params) {
   P <- x[1]
@@ -50,7 +50,7 @@ These first three sets of parameters were used in King et al., and I use them he
 params40 <- c(r=40, k=3.5, y=10^-4, a=1, d=.5)
 params70 <- c(r=70, k=3.5, y=10^-4, a=1, d=.5)
 params100 <- c(r=100, k=3.5, y=10^-4, a=1, d=.5)
-time <- seq(0,5, by=0.001)
+time <- seq(0,2, by=0.001)
 lowid <- 1
 medid <- 100
 highid <- 10000
@@ -123,9 +123,7 @@ symptomatic.df <- function(data, thresh) {
   
   return(symp)
 }
-```
-Assuming that pathogen clearance is reached as soon as pathogen load reaches 0, I only plot transmission potential until it first hits 0.
-```{r}
+
 plot.transmission.lines <- function(df, k, color) {
   lines(df$time, transmission.potential(k, df$P), col=color)
 }
@@ -139,47 +137,38 @@ plot.simple.model.panel <- function(symp.thresh, k, datalow, datamed, datahigh,
   medcolor= cols$med
   highcolor= cols$high
   
-  plot(1, type="n", xlab='', ylab='', log='y', xlim=c(0, 0.4), ylim=c(1, 10^4), 
+  plot(1, type="n", xlab='', ylab='', xlim=c(0, 0.4), ylim=c(1, 600), 
        cex.lab=2, cex.axis=1.5, cex.main=2)
   plot.transmission.lines(datalow, k, lowcolor)
   plot.transmission.lines(datamed, k, medcolor)
   plot.transmission.lines(datahigh, k, highcolor)
   abline(h=symp.thresh, lty=3, col="red")
-  text(0.03, 3 * 10^3, labels=label, font=2, cex=2)
   mtext(text="Time", side=1, line=4, cex=2)
   mtext(text="Transmission Potential", side=2, line=4, cex=2)
 }
 
-datalow <- cutter(lowid, time, params40)
-datamed <- data.frame(lsoda(c(P=medid, X=0), time, transmission.model, params40))
-datahigh <- data.frame(lsoda(c(P=highid, X=0), time, transmission.model, params40))
+datalow <- cutter(ids$low, time, params40)
+datamed <- cutter(ids$med, time, params40)
+datahigh <- cutter(ids$high, time, params40)
 
 #Case 1: Symptoms threshold is below transmission threshold
 
 {
   png("./Figures/Simple Model.png", width=1000, height=700)
-  par(mfrow=c(1, 2), mar=c(5.1, 6.1, 4.1, 3.1))
-  symp.thresh1 <- 50
+  par(mar=c(5.1, 6.1, 4.1, 3.1))
+  symp.thresh1 <- 430
   
   { 
   
-    plot.simple.model.panel(symp.thresh1, k, datalow, datamed, datahigh, cols, "A)")
+    plot.simple.model.panel(symp.thresh1, k, datalow, datamed, datahigh, cols)
     
-    legend(0.1, 9 * 10^3, 
+    legend(0.25, 600, 
            title="Relative Infectious Dose",
            legend=c("1", "100", "10000", "Symptom threshold"), 
            lty= c(1, 1, 1, 3, 3), col=c(cols$low, cols$med, cols$high, "red"), lwd=3, 
            cex=1.5, text.font=2) 
   }
-  
 
-
-#Case 2: Symptoms threshold is above transmission threshold
-
-  symp.thresh2 <- 1000
-  
-  plot.simple.model.panel(symp.thresh2, k, datalow, datamed, datahigh, cols, "B)")
-  
   dev.off()
 }
 
@@ -288,21 +277,19 @@ gamma_variable <- rep(c(0.5 * 10^-4, 10^-4, 1.5 * 10^-4), 3)
 r_variable <- rep(c(10, 70, 130), 3)
 dose <- c(rep(1, 3), rep(100, 3), rep(10000, 3))
 
-varyingr <- data.frame(gamma= gamma_variable[2], r=r_variable, dose=dose)
-
-varyingy <- data.frame(gamma=gamma_variable, r=r_variable[2], dose=dose)
-
 get.params <- function(gamma, r) {
   return (c(y=gamma, r=r, a=1, d=.5, k=3.5))
 }
 
 desolve_function <- function(gamma, r, id) {
-  time <- seq(0,2, by=0.001)
+  time = seq(0,2, by=0.001)
   parameter_value = get.params(gamma, r)
   df = cutter(id, time, parameter_value)
   tp = data.frame(time=time, transmission_potential=transmission.potential(10^-3, df$P), immune=df$X, gamma=gamma, r=r, dose=id)
   return(tp)
 }
+
+varyingr <- data.frame(gamma= gamma_variable[2], r=r_variable, dose=dose)
 
 #varyingr is a list
 varyingr <- do.call(rbind, mapply(desolve_function, varyingr$gamma, varyingr$r, varyingr$dose, SIMPLIFY = FALSE))
@@ -329,6 +316,7 @@ symptomatic.highr.medthresh <- symptomatic.df(highr, symp.medthresh)
 symptomatic.highr.highthresh <- symptomatic.df(highr, symp.highthresh)
 
 #varyingy is a list
+varyingy <- data.frame(gamma=gamma_variable, r=r_variable[2], dose=dose)
 varyingy <- mapply(desolve_function, varyingy$gamma, varyingy$r, id=varyingy$dose, SIMPLIFY = FALSE)
 
 varyingy <- do.call(rbind, varyingy)
@@ -423,17 +411,17 @@ varyingy.plot.medthresh <- plot.varyingy(lowy, medy, highy,
 varyingy.plot.highthresh <- plot.varyingy(lowy, medy, highy, 
                                          symptomatic.lowy.highthresh, symptomatic.medy.highthresh, symptomatic.highy.highthresh)
 
-grid.arrange(varyingr.plot.lowthresh, varyingy.plot.lowthresh, ncol=2)
+lowsymp.thresh.plot <- grid.arrange(varyingr.plot.lowthresh, varyingy.plot.lowthresh, ncol=2)
 
-ggsave("./Figures/Varying r and y low thresh.png")
+ggsave("./Figures/Varying r and y low thresh.png", plot=lowsymp.thresh.plot)
 
-grid.arrange(varyingr.plot.medthresh, varyingy.plot.medthresh, ncol=2)
+medsymp.thresh.plot <- grid.arrange(varyingr.plot.medthresh, varyingy.plot.medthresh, ncol=2)
 
-ggsave("./Figures/Varying r and y med thresh.png")
+ggsave("./Figures/Varying r and y med thresh.png", plot=medsymp.thresh.plot)
 
-grid.arrange(varyingr.plot.highthresh, varyingy.plot.highthresh, ncol=2)
+highsymp.thresh.plot <- grid.arrange(varyingr.plot.highthresh, varyingy.plot.highthresh, ncol=2)
 
-ggsave("./Figures/Varying r and y high thresh.png")
+ggsave("./Figures/Varying r and y high thresh.png", plot=highsymp.thresh.plot)
 
 
 ```
