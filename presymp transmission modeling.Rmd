@@ -10,6 +10,7 @@ My packages for ODE models and plotting:
 ```{r}
 require(deSolve)
 require(ggplot2)
+require(gridExtra)
 ```
 
 Here, I have my ODE model, a function for calculating transmission potential from pathogen load, and a function for creating a dataframe containing the reuslts of the model. I assume transmission potential is directly proportional to pathogen load via a constant k.
@@ -108,16 +109,17 @@ peak.immuneresponse <- function(data) {
 symp.thresh <- function(data, thresh.type) {
   peak.immune <- peak.immuneresponse(data)
   
-  if(thresh.type == 'h') {
-    return (peak.immune)
+  if(thresh.type == 'high') {
+    return (peak.immune * 2)
+  } else if (thresh.type == 'med') {
+    return(peak.immune)
   } else {
-    return(peak.immune - 5)
+    return(peak.immune / 2)
   }
 }
 
-symptomatic.df <- function(data, thresh.type) {
-  threshold = symp.thresh(data, thresh.type)
-  symp= data[data$immune >= threshold,]
+symptomatic.df <- function(data, thresh) {
+  symp= data[data$immune >= thresh,]
   
   return(symp)
 }
@@ -306,60 +308,72 @@ desolve_function <- function(gamma, r, id) {
 varyingr <- do.call(rbind, mapply(desolve_function, varyingr$gamma, varyingr$r, varyingr$dose, SIMPLIFY = FALSE))
 
 lowr <- varyingr[varyingr$r == r_variable[1],] 
-params.lowr <- get.params(gamma_variable[2], r_variable[1])
-symptomatic.lowr.lowthresh <- symptomatic.df(lowr, 'low')
-symptomatic.lowr.highthresh <- symptomatic.df(lowr, 'high')
-
 medr <- varyingr[varyingr$r == r_variable[2],] 
-params.medr <- get.params(gamma_variable[2], r_variable[2])
-symptomatic.medr.lowthresh <- symptomatic.df(medr, 'low')
-symptomatic.medr.highthresh <- symptomatic.df(medr, 'high')
-
 highr <- varyingr[varyingr$r == r_variable[3],] 
-params.highr <- get.params(gamma_variable[2], r_variable[3])
-symptomatic.highr.lowthresh <- symptomatic.df(highr, 'low')
-symptomatic.highr.highthresh <- symptomatic.df(highr, 'high')
+
+symp.lowthresh <- symp.thresh(medr, 'low')
+symp.medthresh <- symp.thresh(medr, 'med')
+symp.highthresh <- symp.thresh(medr, 'high')
+
+lowr <- varyingr[varyingr$r == r_variable[1],] 
+symptomatic.lowr.lowthresh <- symptomatic.df(lowr, symp.lowthresh)
+symptomatic.lowr.medthresh <- symptomatic.df(lowr, symp.medthresh)
+symptomatic.lowr.highthresh <- symptomatic.df(lowr, symp.highthresh)
+
+symptomatic.medr.lowthresh <- symptomatic.df(medr, symp.lowthresh)
+symptomatic.medr.medthresh <- symptomatic.df(medr, symp.medthresh)
+symptomatic.medr.highthresh <- symptomatic.df(medr, symp.highthresh)
+
+symptomatic.highr.lowthresh <- symptomatic.df(highr, symp.lowthresh)
+symptomatic.highr.medthresh <- symptomatic.df(highr, symp.medthresh)
+symptomatic.highr.highthresh <- symptomatic.df(highr, symp.highthresh)
 
 #varyingy is a list
 varyingy <- mapply(desolve_function, varyingy$gamma, varyingy$r, id=varyingy$dose, SIMPLIFY = FALSE)
 
 varyingy <- do.call(rbind, varyingy)
 
-symptomaticvaryingy <- varyingy[varyingy$immune >= symp.thresh,]
-symp.lowgamma <- symptomaticvaryingy[symptomaticvaryingy$gamma == gamma_variable[1],]
-symp.medgamma <- symptomaticvaryingy[symptomaticvaryingy$gamma == gamma_variable[2],]
-symp.highgamma <- symptomaticvaryingy[symptomaticvaryingy$gamma == gamma_variable[3],]
+lowy <- varyingy[varyingy$gamma == gamma_variable[1],] 
+medy <- varyingy[varyingy$gamma == gamma_variable[2],] 
+highy <- varyingy[varyingy$gamma == gamma_variable[3],] 
+
+symptomatic.lowy.lowthresh <- symptomatic.df(lowy, symp.lowthresh)
+symptomatic.lowy.medthresh <- symptomatic.df(lowy, symp.medthresh)
+symptomatic.lowy.highthresh <- symptomatic.df(lowy, symp.highthresh)
+
+symptomatic.medy.lowthresh <- symptomatic.df(medy, symp.lowthresh)
+symptomatic.medy.medthresh <- symptomatic.df(medy, symp.medthresh)
+symptomatic.medy.highthresh <- symptomatic.df(medy, symp.highthresh)
+
+symptomatic.highy.lowthresh <- symptomatic.df(highy, symp.lowthresh)
+symptomatic.highy.medthresh <- symptomatic.df(highy, symp.medthresh)
+symptomatic.highy.highthresh <- symptomatic.df(highy, symp.highthresh)
 
 ```
 
 Here, I plot the results. Each row is a different infectious dose. The left column varies r, and the right column varies gamma.
 ```{r}
-gamma <- "\u03B3"
-
-colsr <- c("10"="red", "70"="purple", "130"="orange")
-
-colsgamma <- c("5e-05"="black", "1e-04"="green", "0.00015"="blue")
-  
-idlabels <- c("Infectious Dose: 1",
-              "Infectious Dose: 100",
-              "Infectious Dose: 10000")
-names(idlabels) <- c("1", "100", "10000")
-
 plot.varyingr <- function(lowr.df, medr.df, highr.df, symp.lowr.df, symp.medr.df, symp.highr.df) {
-  ggplot(NULL, aes(x=time, y=transmission_potential)) + 
+  colsr.id <- c("1"="red", "100"="purple", "10000"="orange")
+  
+  rlabels <- c("r: 10",
+              "r: 70",
+              "r: 130")
+  names(rlabels) <- c("10", "70", "130")
+  ggplot(varyingr, aes(x=time, y=transmission_potential, color=as.factor(dose))) + 
   xlim(0, 1.8) +
-  geom_line(data=lowr.df, aes(colour=toString(lowr.df$r[1]))) +
-  geom_line(data=medr.df, aes(colour=toString(medr.df$r[1]))) +
-  geom_line(data=highr.df, aes(colour=toString(highr.df$r[1]))) +
-  facet_wrap(~ dose, ncol=1, labeller=labeller(dose=idlabels)) +
+  geom_line(data=lowr.df) +
+  geom_line(data=medr.df) +
+  geom_line(data=highr.df) +
+  facet_wrap(~ r, ncol=1, labeller=labeller(r=rlabels), scales="free") +
   
   #Bolded transmission potential lines where symptoms occur
-  geom_line(data=symp.lowr.df, aes(colour=toString(lowr.df$r[1])), lwd=1.5) +
-  geom_line(data=symp.medr.df, aes(colour=toString(medr.df$r[1])), lwd=1.5) +
-  geom_line(data=symp.highr.df, aes(colour=toString(highr.df$r[1])),lwd=1.5) +
+  geom_line(data=symp.lowr.df, lwd=1.5) +
+  geom_line(data=symp.medr.df, lwd=1.5) +
+  geom_line(data=symp.highr.df,lwd=1.5) +
   
   xlab("Time") + ylab("Transmission Potential") + 
-  scale_color_manual(name="Pathogen replication rate (r)", values = colsr) +
+  scale_color_manual(name="Relative Infectious Dose", values = colsr.id) +
   theme(strip.background = element_rect(fill="lightblue"), 
         legend.position=c(.7, .15)) 
 }
@@ -367,36 +381,59 @@ plot.varyingr <- function(lowr.df, medr.df, highr.df, symp.lowr.df, symp.medr.df
 varyingr.plot.lowthresh <- plot.varyingr(lowr, medr, highr, 
                                          symptomatic.lowr.lowthresh, symptomatic.medr.lowthresh, symptomatic.highr.lowthresh)
 
-varyingy.plot <- ggplot(NULL, aes(x=time, y=transmission_potential)) + 
-  xlim(0, 0.25) +
-  geom_line(data=varyingy[varyingy$gamma==gamma_variable[1],],
-            aes(colour=toString(gamma_variable[1]))) +
-  geom_line(data=varyingy[varyingy$gamma==gamma_variable[2],], 
-            aes(colour=toString(gamma_variable[2]))) +
-  geom_line(data=varyingy[varyingy$gamma==gamma_variable[3],], 
-            aes(colour=toString(gamma_variable[3]))) +
-  facet_wrap(~ dose, ncol=1, labeller=labeller(dose=idlabels)) +
+varyingr.plot.medthresh <- plot.varyingr(lowr, medr, highr, 
+                                         symptomatic.lowr.medthresh, symptomatic.medr.medthresh, symptomatic.highr.medthresh)
+
+varyingr.plot.highthresh <- plot.varyingr(lowr, medr, highr, 
+                                         symptomatic.lowr.highthresh, symptomatic.medr.highthresh, symptomatic.highr.highthresh)
+
+plot.varyingy <- function(lowy.df, medy.df, highy.df, symp.lowy.df, symp.medy.df, symp.highy.df) {
+  gamma <- "\u03B3"
+  colsy.id <- c("1"="black", "100"="green", "10000"="blue")
+  ylabels <- c(paste(gamma, ": 5e-05", sep=""),
+              paste(gamma, ": 1e-04", sep=""),
+              paste(gamma, ": 0.00015", sep=""))
+
+  names(ylabels) <- c("5e-05", "1e-04", "0.00015")
+  
+  ggplot(varyingy, aes(x=time, y=transmission_potential, color=as.factor(dose))) + 
+  xlim(0, 1.8) +
+  geom_line(data=lowy.df) +
+  geom_line(data=medy.df) +
+  geom_line(data=highy.df) +
+  facet_wrap(~ gamma, ncol=1, labeller=labeller(gamma=ylabels), scales="free") +
   
   #Bolded transmission potential lines where symptoms occur
-  geom_line(data=symp.lowgamma, 
-            aes(colour= toString(gamma_variable[1])), lwd=1.1) +
-  geom_line(data=symp.medgamma, 
-            aes(colour= toString(gamma_variable[2])), lwd=1.1) +
-  geom_line(data=symp.highgamma, 
-            aes(colour= toString(gamma_variable[3])), lwd=1.1) +
+  geom_line(data=symp.lowy.df, lwd=1.5) +
+  geom_line(data=symp.medy.df, lwd=1.5) +
+  geom_line(data=symp.highy.df,lwd=1.5) +
   
-  xlab("Time") +  ylab("") +
-  theme(axis.ticks.y=element_blank(),
-        axis.text.y=element_blank(),
-        strip.background = element_rect(fill="lightblue"),
-        legend.position=c(.7, .15)) +
-  scale_color_manual(name=
-                       paste("Immune response recruitment rate (", gamma, ")", 
-                             sep=""),
-                       values = colsgamma)
+  xlab("Time") + ylab("Transmission Potential") + 
+  scale_color_manual(name="Relative Infectious Dose", values = colsy.id) +
+  theme(strip.background = element_rect(fill="lightblue"), 
+        legend.position=c(.7, .15)) 
+}
 
-grid.arrange(varyingr.plot, varyingy.plot, ncol=2)
+varyingy.plot.lowthresh <- plot.varyingy(lowy, medy, highy, 
+                                         symptomatic.lowy.lowthresh, symptomatic.medy.lowthresh, symptomatic.highy.lowthresh)
 
-ggsave("./Figures/Varying r and y 6 panels.png")
+varyingy.plot.medthresh <- plot.varyingy(lowy, medy, highy, 
+                                         symptomatic.lowy.medthresh, symptomatic.medy.medthresh, symptomatic.highy.medthresh)
+
+varyingy.plot.highthresh <- plot.varyingy(lowy, medy, highy, 
+                                         symptomatic.lowy.highthresh, symptomatic.medy.highthresh, symptomatic.highy.highthresh)
+
+grid.arrange(varyingr.plot.lowthresh, varyingy.plot.lowthresh, ncol=2)
+
+ggsave("./Figures/Varying r and y low thresh.png")
+
+grid.arrange(varyingr.plot.medthresh, varyingy.plot.medthresh, ncol=2)
+
+ggsave("./Figures/Varying r and y med thresh.png")
+
+grid.arrange(varyingr.plot.highthresh, varyingy.plot.highthresh, ncol=2)
+
+ggsave("./Figures/Varying r and y high thresh.png")
+
 
 ```
