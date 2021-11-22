@@ -152,11 +152,11 @@ datahigh <- cutter(ids$high, time, params40)
 {
   png("./Figures/Simple Model.png", width=1000, height=700)
   par(mar=c(5.1, 6.1, 4.1, 3.1))
-  symp.thresh3 <- 430
+  symp.thresh <- 430
   
   { 
   
-    plot.simple.model.panel(symp.thresh3, k, datalow, datamed, datahigh, cols)
+    plot.simple.model.panel(symp.thresh, k, datalow, datamed, datahigh, cols)
     
     legend(0.25, 600, 
            title="Relative Infectious Dose",
@@ -273,7 +273,7 @@ gamma_variable <- seq(0.5 * 10^-4, 1.5 * 10^-4, by=7.692308e-06)
 medgamma <- 10^-4
 r_variable <- seq(10, 130, by=10)
 medr <- 70
-dose <- c(rep(1, 3), rep(100, 3), rep(10000, 3))
+dose <- 10^seq(1, 6)
 gamma <- "\u03B3"
 
 get.params <- function(gamma, r) {
@@ -318,7 +318,7 @@ delays.df.byr <- data.frame(r=integer(), delay.peakload.symponset=integer())
 
 for (r in r_variable) {
   df= varyingr[varyingr$r==r,]
-  delay.peakload.symponset= peak.pathogenloadtime(df, k) - symptom.onset(df, symp.thresh3)
+  delay.peakload.symponset= peak.pathogenloadtime(df, k) - symptom.onset(df, symp.thresh)
   dftoadd= data.frame(r, delay.peakload.symponset)
   names(dftoadd)= c("r", "delay.peakload.symponset")
   delays.df.byr <- rbind(delays.df.byr, dftoadd)
@@ -332,10 +332,24 @@ delays.df.bygamma <- data.frame(gamma=integer(), delay.peakload.symponset=intege
 
 for (gamma in gamma_variable) {
   df= varyinggamma[varyinggamma$gamma==gamma,]
-  delay.peakload.symponset= peak.pathogenloadtime(df, k) - symptom.onset(df, symp.thresh3)
+  delay.peakload.symponset= peak.pathogenloadtime(df, k) - symptom.onset(df, symp.thresh)
   dftoadd= data.frame(gamma, delay.peakload.symponset)
   names(dftoadd)= c("gamma", "delay.peakload.symponset")
   delays.df.bygamma <- rbind(delays.df.bygamma, dftoadd)
+}
+
+#Varying infectious dose and determinine delay between peak pathogen load and symptom onset accordingly. Dynamically, varyingdose is a list.
+varyingdose <- data.frame(gamma= medgamma, r=medr, dose=dose)
+varyingdose <- do.call(rbind, mapply(desolve_function, varyingdose$gamma, varyingdose$r, varyingdose$dose, k, SIMPLIFY = FALSE))
+
+delays.df.bydose <- data.frame(dose=integer(), delay.peakload.symponset=integer())
+
+for (d in dose) {
+  df= varyingdose[varyingdose$dose==d,]
+  delay.peakload.symponset= peak.pathogenloadtime(df, k) - symptom.onset(df, symp.thresh3)
+  dftoadd= data.frame(d, delay.peakload.symponset)
+  names(dftoadd)= c("dose", "delay.peakload.symponset")
+  delays.df.bydose <- rbind(delays.df.bydose, dftoadd)
 }
 
 ```
@@ -350,7 +364,7 @@ plot.varyingr <- function(delaysbyr, symp.thresh) {
   ylab("Delay Between Peak Pathogen Load and Symptom Onset") + 
   ggtitle(paste("Varying Replication Rate r (symptoms threshold = ", symp.thresh, ")")) +
   theme(strip.background = element_rect(fill="lightblue"))
-}; plot.varyingr(delays.df.byr, symp.thresh3)
+}; plot.varyingr(delays.df.byr, symp.thresh)
 
 plot.varyinggamma <- function(delaysbygamma, symp.thresh) {
   ggplot(delaysbygamma, aes(x=gamma, y=delay.peakload.symponset)) + geom_point() +
@@ -358,5 +372,15 @@ plot.varyinggamma <- function(delaysbygamma, symp.thresh) {
   ylab("Delay Between Peak Pathogen Load and Symptom Onset") + 
   ggtitle(paste("Varying Immune Response Recruitment Rate (", gamma, ") ", "(symptoms threshold = ", symp.thresh, ")")) +
   theme(strip.background = element_rect(fill="lightblue"))
-}; plot.varyinggamma(delays.df.bygamma, symp.thresh3)
+}; plot.varyinggamma(delays.df.bygamma, symp.thresh)
+
+plot.varyingdose <- function(delaysbydose, symp.thresh) {
+  ggplot(delaysbydose, aes(x=dose, y=delay.peakload.symponset)) + geom_point() +
+  xlab("Infectious Dose") + 
+  ylab("Delay Between Peak Pathogen Load and Symptom Onset") + 
+  ggtitle(paste("Varying Infectious Dose ", "(symptoms threshold = ", symp.thresh, ")")) +
+  theme(strip.background = element_rect(fill="lightblue")) +
+  scale_x_log10()
+}; plot.varyingdose(delays.df.bydose, symp.thresh3)
+
 ```
