@@ -45,7 +45,7 @@ cutter <- function(dose, time, params) {
 }
 ```
 
-These first three sets of parameters were used in King et al., and I use them here to 1) plot immune response over time and 2) plot a simple model of transmission where symptoms are determined by a pathogen load threshold (explained below). I varied the infectious dose values by a factor of 10^2, set the time steps as 0.01 from 0 to 10 units and the proportionality constant between pathogen load and transmission potential to 10^-3, and differentiated the infectious doses by color (light grey to black). 
+These first three sets of parameters were used in King et al., and I use them here to 1) plot immune response over time and 2) plot a simple model of transmission where symptoms are determined by a pathogen load threshold (explained below). I varied the infectious dose values by a factor of 10^2, set the time steps as 0.001 from 0 to 2 units and the proportionality constant between pathogen load and transmission potential to 10^-3, and differentiated the infectious doses by color (light grey to black). 
 ```{r}
 params40 <- c(r=40, k=3.5, y=10^-4, a=1, d=.5)
 params70 <- c(r=70, k=3.5, y=10^-4, a=1, d=.5)
@@ -55,10 +55,6 @@ lowid <- 1
 medid <- 100
 highid <- 10000
 ids <- data.frame(low=lowid, med=medid, high=highid)
-lowcolor <- "black"
-medcolor <- "#a3a3a3"
-highcolor <- "#d4d4d4"
-cols <- data.frame(low=lowcolor, med=medcolor, high=highcolor)
 k <- 10^-3
 ```
 
@@ -99,14 +95,14 @@ plot.immune.response.panel(ids, params100, cols, "C)")
 dev.off()
 ```
 
-I constructed a function to determine peak immune response for applicable combinations of r and gamma values. Using this value, I then determined two thresholds for determining symptoms--below, and right at it--via another function.
+I constructed a function to determine peak immune response for applicable combinations of r and gamma values. Using this value, I can then determine two thresholds for determining symptoms--below, and right at it--via another function.
 ```{r}
 peak.immuneresponse <- function(data) {
   peak = max(data$immune)
   return(peak)
 }
 
-symp.thresh <- function(data, thresh.type) {
+symptom.thresh <- function(data, thresh.type) {
   peak.immune <- peak.immuneresponse(data)
   
   if(thresh.type == 'high') {
@@ -156,11 +152,11 @@ datahigh <- cutter(ids$high, time, params40)
 {
   png("./Figures/Simple Model.png", width=1000, height=700)
   par(mar=c(5.1, 6.1, 4.1, 3.1))
-  symp.thresh1 <- 430
+  symp.thresh3 <- 430
   
   { 
   
-    plot.simple.model.panel(symp.thresh1, k, datalow, datamed, datahigh, cols)
+    plot.simple.model.panel(symp.thresh3, k, datalow, datamed, datahigh, cols)
     
     legend(0.25, 600, 
            title="Relative Infectious Dose",
@@ -268,160 +264,99 @@ dev.off()
 
 ```
 
-# Gamma r reproduction rate Figures
+# Plots of delay between pathogen load peak and symptom onset for different r and gamma values
 
-On 11/08/21, I'm going to vary gamma and r and plot transmission potential against time for 3 infectious doses. 
+On 11/21/21, I'm going to vary gamma and r and plot the delay between peak pathogen load and symptom onset against various r and gamma values (separately). 
 
 ```{r}  
-gamma_variable <- rep(c(0.5 * 10^-4, 10^-4, 1.5 * 10^-4), 3)
-r_variable <- rep(c(10, 70, 130), 3)
+gamma_variable <- seq(0.5 * 10^-4, 1.5 * 10^-4, by=7.692308e-06)
+medgamma <- 10^-4
+r_variable <- seq(10, 130, by=10)
+medr <- 70
 dose <- c(rep(1, 3), rep(100, 3), rep(10000, 3))
+gamma <- "\u03B3"
 
 get.params <- function(gamma, r) {
   return (c(y=gamma, r=r, a=1, d=.5, k=3.5))
 }
 
-desolve_function <- function(gamma, r, id) {
+desolve_function <- function(gamma, r, id, k) {
   time = seq(0,2, by=0.001)
   parameter_value = get.params(gamma, r)
   df = cutter(id, time, parameter_value)
-  tp = data.frame(time=time, transmission_potential=transmission.potential(10^-3, df$P), immune=df$X, gamma=gamma, r=r, dose=id)
+  tp = data.frame(time=time, transmission_potential=transmission.potential(k, df$P), immune=df$X, gamma=gamma, r=r, dose=id)
   return(tp)
 }
 
-varyingr <- data.frame(gamma= gamma_variable[2], r=r_variable, dose=dose)
+peak.pathogenloadtime <- function(df, k) {
+  peak.pl= max(df$transmission_potential)
+  return(df[which(df$transmission_potential==peak.pl),]$time)
+}
 
-#varyingr is a list
-varyingr <- do.call(rbind, mapply(desolve_function, varyingr$gamma, varyingr$r, varyingr$dose, SIMPLIFY = FALSE))
+symptom.onset <- function(df, thresh) {
+  symptomatic= df[which(df$immune >= thresh),]$time
+  if(length(symptomatic) > 0) {
+    return(min(symptomatic))
+  } else {
+    return(NA)
+  }
+}
 
-lowr <- varyingr[varyingr$r == r_variable[1],] 
-medr <- varyingr[varyingr$r == r_variable[2],] 
-highr <- varyingr[varyingr$r == r_variable[3],] 
+k <- 10^-3
 
-symp.lowthresh <- symp.thresh(medr, 'low')
-symp.medthresh <- symp.thresh(medr, 'med')
-symp.highthresh <- symp.thresh(medr, 'high')
+#Varying r and determinine delay between peak pathogen load and symptom onset accordingly. Dynamically, varyingr is a list.
+varyingr <- data.frame(gamma= medgamma, r=r_variable, dose=ids$low)
+varyingr <- do.call(rbind, mapply(desolve_function, varyingr$gamma, varyingr$r, varyingr$dose, k, SIMPLIFY = FALSE))
 
-lowr <- varyingr[varyingr$r == r_variable[1],] 
-symptomatic.lowr.lowthresh <- symptomatic.df(lowr, symp.lowthresh)
-symptomatic.lowr.medthresh <- symptomatic.df(lowr, symp.medthresh)
-symptomatic.lowr.highthresh <- symptomatic.df(lowr, symp.highthresh)
+lowr <- varyingr[varyingr$r == r_variable[1],]
 
-symptomatic.medr.lowthresh <- symptomatic.df(medr, symp.lowthresh)
-symptomatic.medr.medthresh <- symptomatic.df(medr, symp.medthresh)
-symptomatic.medr.highthresh <- symptomatic.df(medr, symp.highthresh)
+symp.thresh1 <- 5
+symp.thresh2 <- 10
+symp.thresh3 <- 15
 
-symptomatic.highr.lowthresh <- symptomatic.df(highr, symp.lowthresh)
-symptomatic.highr.medthresh <- symptomatic.df(highr, symp.medthresh)
-symptomatic.highr.highthresh <- symptomatic.df(highr, symp.highthresh)
+delays.df.byr <- data.frame(r=integer(), delay.peakload.symponset=integer())
 
-#varyingy is a list
-varyingy <- data.frame(gamma=gamma_variable, r=r_variable[2], dose=dose)
-varyingy <- mapply(desolve_function, varyingy$gamma, varyingy$r, id=varyingy$dose, SIMPLIFY = FALSE)
+for (r in r_variable) {
+  df= varyingr[varyingr$r==r,]
+  delay.peakload.symponset= peak.pathogenloadtime(df, k) - symptom.onset(df, symp.thresh3)
+  dftoadd= data.frame(r, delay.peakload.symponset)
+  names(dftoadd)= c("r", "delay.peakload.symponset")
+  delays.df.byr <- rbind(delays.df.byr, dftoadd)
+}
 
-varyingy <- do.call(rbind, varyingy)
+#Varying gamma and determinine delay between peak pathogen load and symptom onset accordingly. Dynamically, varyinggamma is a list.
+varyinggamma <- data.frame(gamma=gamma_variable, r=medr, dose=ids$low)
+varyinggamma <- do.call(rbind, mapply(desolve_function, varyinggamma$gamma, varyinggamma$r, id=varyinggamma$dose, k, SIMPLIFY = FALSE))
 
-lowy <- varyingy[varyingy$gamma == gamma_variable[1],] 
-medy <- varyingy[varyingy$gamma == gamma_variable[2],] 
-highy <- varyingy[varyingy$gamma == gamma_variable[3],] 
+delays.df.bygamma <- data.frame(gamma=integer(), delay.peakload.symponset=integer())
 
-symptomatic.lowy.lowthresh <- symptomatic.df(lowy, symp.lowthresh)
-symptomatic.lowy.medthresh <- symptomatic.df(lowy, symp.medthresh)
-symptomatic.lowy.highthresh <- symptomatic.df(lowy, symp.highthresh)
-
-symptomatic.medy.lowthresh <- symptomatic.df(medy, symp.lowthresh)
-symptomatic.medy.medthresh <- symptomatic.df(medy, symp.medthresh)
-symptomatic.medy.highthresh <- symptomatic.df(medy, symp.highthresh)
-
-symptomatic.highy.lowthresh <- symptomatic.df(highy, symp.lowthresh)
-symptomatic.highy.medthresh <- symptomatic.df(highy, symp.medthresh)
-symptomatic.highy.highthresh <- symptomatic.df(highy, symp.highthresh)
+for (gamma in gamma_variable) {
+  df= varyinggamma[varyinggamma$gamma==gamma,]
+  delay.peakload.symponset= peak.pathogenloadtime(df, k) - symptom.onset(df, symp.thresh3)
+  dftoadd= data.frame(gamma, delay.peakload.symponset)
+  names(dftoadd)= c("gamma", "delay.peakload.symponset")
+  delays.df.bygamma <- rbind(delays.df.bygamma, dftoadd)
+}
 
 ```
 
-Here, I plot the results. Each row is a different infectious dose. The left column varies r, and the right column varies gamma.
+Here, I plot the results. These are scatterplots showing delay between peak pathogen load and symptom onset vs. either replication rate r or immune response recruitment rate gamma.
 ```{r}
-plot.varyingr <- function(lowr.df, medr.df, highr.df, symp.lowr.df, symp.medr.df, symp.highr.df) {
-  colsr.id <- c("1"="red", "100"="purple", "10000"="orange")
-  
-  rlabels <- c("r: 10",
-              "r: 70",
-              "r: 130")
-  names(rlabels) <- c("10", "70", "130")
-  ggplot(varyingr, aes(x=time, y=transmission_potential, color=as.factor(dose))) + 
-  xlim(0, 1.8) +
-  geom_line(data=lowr.df) +
-  geom_line(data=medr.df) +
-  geom_line(data=highr.df) +
-  facet_wrap(~ r, ncol=1, labeller=labeller(r=rlabels), scales="free") +
-  
-  #Bolded transmission potential lines where symptoms occur
-  geom_line(data=symp.lowr.df, lwd=1.5) +
-  geom_line(data=symp.medr.df, lwd=1.5) +
-  geom_line(data=symp.highr.df,lwd=1.5) +
-  
-  xlab("Time") + ylab("Transmission Potential") + 
-  scale_color_manual(name="Relative Infectious Dose", values = colsr.id) +
-  theme(strip.background = element_rect(fill="lightblue"), 
-        legend.position=c(.65, .15)) 
-}
 
-varyingr.plot.lowthresh <- plot.varyingr(lowr, medr, highr, 
-                                         symptomatic.lowr.lowthresh, symptomatic.medr.lowthresh, symptomatic.highr.lowthresh)
+plot.varyingr <- function(delaysbyr, symp.thresh) {
+  ggplot(delaysbyr, aes(x=r, y=delay.peakload.symponset)) + 
+  geom_point() +
+  xlab("Replication Rate (r)") + 
+  ylab("Delay Between Peak Pathogen Load and Symptom Onset") + 
+  ggtitle(paste("Varying Replication Rate r (symptoms threshold = ", symp.thresh, ")")) +
+  theme(strip.background = element_rect(fill="lightblue"))
+}; plot.varyingr(delays.df.byr, symp.thresh3)
 
-varyingr.plot.medthresh <- plot.varyingr(lowr, medr, highr, 
-                                         symptomatic.lowr.medthresh, symptomatic.medr.medthresh, symptomatic.highr.medthresh)
-
-varyingr.plot.highthresh <- plot.varyingr(lowr, medr, highr, 
-                                         symptomatic.lowr.highthresh, symptomatic.medr.highthresh, symptomatic.highr.highthresh)
-
-plot.varyingy <- function(lowy.df, medy.df, highy.df, symp.lowy.df, symp.medy.df, symp.highy.df) {
-  gamma <- "\u03B3"
-  colsy.id <- c("1"="black", "100"="green", "10000"="blue")
-  ylabels <- c(paste(gamma, ": 5e-05", sep=""),
-              paste(gamma, ": 1e-04", sep=""),
-              paste(gamma, ": 0.00015", sep=""))
-
-  names(ylabels) <- c("5e-05", "1e-04", "0.00015")
-  
-  ggplot(varyingy, aes(x=time, y=transmission_potential, color=as.factor(dose))) + 
-  xlim(0, 1.8) +
-  geom_line(data=lowy.df) +
-  geom_line(data=medy.df) +
-  geom_line(data=highy.df) +
-  facet_wrap(~ gamma, ncol=1, labeller=labeller(gamma=ylabels), scales="free") +
-  
-  #Bolded transmission potential lines where symptoms occur
-  geom_line(data=symp.lowy.df, lwd=1.5) +
-  geom_line(data=symp.medy.df, lwd=1.5) +
-  geom_line(data=symp.highy.df,lwd=1.5) +
-  
-  xlab("Time") + ylab("Transmission Potential") + 
-  scale_color_manual(name="Relative Infectious Dose", values = colsy.id) +
-  theme(strip.background = element_rect(fill="lightblue"), 
-        legend.position=c(.65, .15)) 
-}
-
-varyingy.plot.lowthresh <- plot.varyingy(lowy, medy, highy, 
-                                         symptomatic.lowy.lowthresh, symptomatic.medy.lowthresh, symptomatic.highy.lowthresh)
-
-varyingy.plot.medthresh <- plot.varyingy(lowy, medy, highy, 
-                                         symptomatic.lowy.medthresh, symptomatic.medy.medthresh, symptomatic.highy.medthresh)
-
-varyingy.plot.highthresh <- plot.varyingy(lowy, medy, highy, 
-                                         symptomatic.lowy.highthresh, symptomatic.medy.highthresh, symptomatic.highy.highthresh)
-
-lowsymp.thresh.plot <- grid.arrange(varyingr.plot.lowthresh, varyingy.plot.lowthresh, ncol=2)
-
-ggsave("./Figures/Varying r and y low thresh.png", plot=lowsymp.thresh.plot)
-
-medsymp.thresh.plot <- grid.arrange(varyingr.plot.medthresh, varyingy.plot.medthresh, ncol=2)
-
-ggsave("./Figures/Varying r and y med thresh.png", plot=medsymp.thresh.plot)
-
-highsymp.thresh.plot <- grid.arrange(varyingr.plot.highthresh, varyingy.plot.highthresh, ncol=2)
-
-ggsave("./Figures/Varying r and y high thresh.png", plot=highsymp.thresh.plot)
-
-
+plot.varyinggamma <- function(delaysbygamma, symp.thresh) {
+  ggplot(delaysbygamma, aes(x=gamma, y=delay.peakload.symponset)) + geom_point() +
+  xlab(paste("Immune Response Recruitment Rate (", gamma, ")")) + 
+  ylab("Delay Between Peak Pathogen Load and Symptom Onset") + 
+  ggtitle(paste("Varying Immune Response Recruitment Rate (", gamma, ") ", "(symptoms threshold = ", symp.thresh, ")")) +
+  theme(strip.background = element_rect(fill="lightblue"))
+}; plot.varyinggamma(delays.df.bygamma, symp.thresh3)
 ```
