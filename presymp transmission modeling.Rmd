@@ -332,9 +332,9 @@ delays.byr.lowsympthresh <- get.delay.peakload.symponset(varyingr, r_variable, l
 delays.byr.medsympthresh <- get.delay.peakload.symponset(varyingr, r_variable, med.sympthresh, "r")
 delays.byr.highsympthresh <- get.delay.peakload.symponset(varyingr, r_variable, high.sympthresh, "r")
 
-write.csv(delays.byr.lowsympthresh, "Delays by r low symp thresh.csv")
-write.csv(delays.byr.medsympthresh, "Delays by r med symp thresh.csv")
-write.csv(delays.byr.highsympthresh, "Delays by r high symp thresh.csv")
+delays.byr.lowsympthresh <- read.csv("Delays by r low symp thresh.csv")
+delays.byr.medsympthresh <- read.csv("Delays by r med symp thresh.csv")
+delays.byr.highsympthresh <- read.csv("Delays by r high symp thresh.csv")
 
 #Varying gamma and determinine delay between peak pathogen load and symptom onset accordingly. Dynamically, varyinggamma is a list.
 varyinggamma <- data.frame(gamma=gamma_variable, r=medr, dose=ids$low)
@@ -404,28 +404,27 @@ for (d in dosevals) {
   freqpresymp.bydose.highsympthresh <- rbind(freqpresymp.bydose.highsympthresh, dftoadd)
 }
 
-write.csv(freqpresymp.bydose.lowsympthresh, "Frequency of Presymptomatic Transmission by Dose (low symptom threshold, group population at 100).csv")
+freqsymp.bydose.lowsympthresh <- read.csv("Frequency of Presymptomatic Transmission by Dose (low symptom threshold, group population at 100).csv")
 
-write.csv(freqpresymp.bydose.medsympthresh, "Frequency of Presymptomatic Transmission by Dose (low symptom threshold, group population at 100).csv")
+freqpresymp.bydose.medsympthresh <- read.csv("Frequency of Presymptomatic Transmission by Dose (low symptom threshold, group population at 100).csv")
 
-write.csv(freqpresymp.bydose.highsympthresh, "Frequency of Presymptomatic Transmission by Dose (low symptom threshold, group population at 100).csv")
+freqpresymp.bydose.highsympthresh <- read.csv("Frequency of Presymptomatic Transmission by Dose (low symptom threshold, group population at 100).csv")
 ```
 
 Here, I plot the results. These are scatterplots showing delay between peak pathogen load and symptom onset vs. either replication rate r or immune response recruitment rate gamma.
 ```{r}
 
-plot.varyingr <- function(delaysbyr, symp.thresh) {
+plot.varyingr <- function(delaysbyr, symp.thresh, pointsize, textsize) {
   ggplot(delaysbyr, aes(x=r, y=delay.peakload.symponset)) + 
-  geom_point() +
-  xlab("Replication Rate (r)") + 
-  ylab("Delay Between Peak Pathogen Load and Symptom Onset") + 
-  ggtitle(paste("Varying Replication Rate r (symptoms threshold = ", symp.thresh, ")")) +
-  theme(strip.background = element_rect(fill="lightblue"))
+  geom_point(col="#E69F00", size=pointsize) +
+  ylab("Delay Between Peak \n Pathogen Load \n and Symptom Onset") +
+  xlab("Replication Rate (r)") +
+  theme(axis.text= element_text(size=textsize), axis.title= element_text(size=textsize), panel.background=element_rect(fill="white", colour="black"))
 }
 
 plot.varyingr(delays.byr.lowsympthresh, low.sympthresh)
 plot.varyingr(delays.byr.medsympthresh, med.sympthresh)
-plot.varyingr(delays.byr.highsympthresh, high.sympthresh)
+plot.varyingr(delays.byr.highsympthresh, high.sympthresh, 10, 30)
 
 plot.varyinggamma <- function(delaysbygamma, symp.thresh) {
   ggplot(delaysbygamma, aes(x=gamma, y=delay.peakload.symponset)) + geom_point() +
@@ -439,14 +438,13 @@ plot.varyinggamma(delays.bygamma.lowsympthresh, low.sympthresh)
 plot.varyinggamma(delays.bygamma.medsympthresh, med.sympthresh)
 plot.varyinggamma(delays.bygamma.highsympthresh, high.sympthresh)
 
-plot.varyingdose <- function(presympfreq.bydose, symp.thresh) {
-  ggplot(presympfreq.bydose, aes(x=dose, y=freq.presymp)) + geom_point() +
+plot.varyingdose <- function(presympfreq.bydose, symp.thresh, pointsize, textsize, col) {
+  ggplot(presympfreq.bydose, aes(x=dose, y=freq.presymp)) + geom_point(color= col, size=pointsize) +
   xlab("Infectious Dose") + 
-  ylab("Frequency of Presymptomatic Transmission") + 
-  ggtitle(paste("Varying Infectious Dose ", "(symptoms threshold = ", symp.thresh, ")")) +
-  theme(strip.background = element_rect(fill="lightblue")) +
+  ylab("Frequency of \n Pre-symptomatic \n Transmission") + 
+  theme(axis.text= element_text(size=textsize), axis.title= element_text(size=textsize), panel.background=element_rect(fill="white", colour="black")) +
   scale_x_log10()
-}; plot.varyingdose(freqpresymp.bydose.highsympthresh, high.sympthresh)
+}; plot.varyingdose(freqpresymp.bydose.highsympthresh, high.sympthresh, 10, 30, cols[3])
 
 ```
 
