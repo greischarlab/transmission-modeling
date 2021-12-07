@@ -460,6 +460,7 @@ peak pathogen load and symptom onset vs. immune response recruitment rate plot.
 ```{r}
 
 plot.dynamics <- function(df, point, symp.thresh, var_name, k) {
+  size=2
   cols= c("Transmission Potential"= "black", "Immune Response" = "purple", 
           "Symptom Threshold" = "red", "Peak Pathogen Load" = "darkgoldenrod1")
   
@@ -469,14 +470,14 @@ plot.dynamics <- function(df, point, symp.thresh, var_name, k) {
   
   ggplot(df, 
          aes(x=time, y=log10(transmission_potential))) + 
-  geom_line(aes(color="Transmission Potential", linetype="Transmission Potential")) + 
+  geom_line(aes(color="Transmission Potential", linetype="Transmission Potential"), size=size) + 
   geom_line(aes(y=log10(immune), 
-             color="Immune Response", linetype="Immune Response")) + 
+             color="Immune Response", linetype="Immune Response"), size=size) + 
   geom_hline(aes(yintercept=log10(symp.thresh),
-             color="Symptom Threshold", linetype="Symptom Threshold")) +
+             color="Symptom Threshold", linetype="Symptom Threshold"), size=size) +
   geom_vline(aes(xintercept=peak.pathogenloadtime(df, k), 
              color="Peak Pathogen Load", linetype="Peak Pathogen Load"),
-             show.legend = FALSE) +
+             show.legend = FALSE, size=size) +
   
   xlab("Time") + ylab("Transmission Potential (log10)") + xlim(0.3, 0.8) + 
   scale_y_continuous(limits=c(0, 2.1), sec.axis=sec_axis(~. *1, name="Immune Response (log10)")) +
