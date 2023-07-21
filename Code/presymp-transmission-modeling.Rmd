@@ -1,0 +1,1417 @@
+---
+title: "Pre-symptomatic Transmission Modeling"
+output:
+  html_document:
+    df_print: paged
+---
+
+My packages for ODE model and plotting:
+
+```{r}
+require(deSolve)
+require(ggplot2)
+require(ggpubr)
+require(ggnewscale)
+require(dplyr)
+require(grid)
+require(viridis)
+require(reshape2)
+```
+
+Here are some variables I use a lot throughout the document. Run through these
+before you go through any of the chunks. 
+
+```{r}
+setwd("C:/Users/ktopa/OneDrive/Documents/Research Project/Git/transmission-modeling")
+time <- seq(0,2, by=0.0001)
+tstep <- .0001
+medr <- 40
+medk <- 3.5
+low.sympthresh <- 5
+med.sympthresh <- 10
+high.sympthresh <- 15
+lowid <- 1
+medid <- 100
+highid <- 10000
+ids <- data.frame(low=lowid, med=medid, high=highid)
+dosevals <- 10^seq(0,10)
+cols <- data.frame(lowid="#009E73", medid="#871a6e",  highid="#E69F00")
+```
+Here, I have my ODE model, a function for calculating transmission potential 
+from pathogen load, and a function for creating a dataframe containing the 
+results of the model. I assume transmission potential is directly proportional 
+to pathogen load by a constant factor m. Assuming that pathogen clearance is 
+reached as soon as pathogen load reaches 0, I truncate the dataframe as soon as 
+transmission potential reaches 0.
+```{r}
+transmission.model <- function(t, x, params) {
+  P <- x[1]
+  X <- x[2]
+
+  with(
+    as.list(params),
+    {
+      dP <- r*P - k*X*P
+      dX <- a - d*X + y*k*X*P
+    
+      res <- c(dP, dX)
+      list(res)
+    }
+  ) 
+}
+
+cutter <- function(dose, time, params, model) {
+  
+  df= data.frame(lsoda(c(P=dose, X=0), time, model, 
+                       params))
+
+  
+  if(any(df$P<= 0)){
+    clearance = min(which(df$P <= 0))
+    df[clearance:length(time),] = NA
+  }
+  return(df)
+}
+```
+
+I define below some useful functions for defining parameters and creating 
+transmission potential dataframes.
+
+```{r}
+get.params <- function(k, r) {
+  return(c(y=10^-4, k=k, r=r, a=1, d=.5))
+}
+
+desolve_function <- function(tstep, k, r, model, id) {
+  time = seq(0,2, by=tstep)
+  parameter_values = get.params(k, r)
+  df = cutter(id, time, parameter_values, model)
+  
+  if ("S" %in% colnames(df)) {
+    symp <- df$S
+  } else {
+    symp <- df$X
+  }
+  
+  tp = data.frame(time=time, 
+                  pathogen=df$P, 
+                  immune=df$X, 
+                  symptoms=symp,
+                  k=k, r=r, dose=id)
+  
+  return(tp)
+}
+
+```
+
+Here I provide functions for calculating time of peak pathogen load and 
+symptom onset as well as the delay between them. These values are needed to 
+determine whether pre-symptomatic transmission has occured. If time of peak 
+pathogen load comes before time of symptom onset, meaning the calculated delay
+is negative, then we have pre-symptomatic transmission.
+
+```{r}
+peak.pathogenloadtime <- function(df) {
+  peak.pl <- max(df$pathogen, na.rm=TRUE)
+  return(df[which(df$pathogen==peak.pl),]$time)
+}
+
+symptomatic.times <- function(df, thresh) {
+  return(df[which(df$symptoms >= thresh),]$time)
+}
+
+symptom.onset <- function(df, thresh) {
+  symptomatic <- symptomatic.times(df, thresh)
+  if(length(symptomatic) > 0) {
+    return(min(symptomatic))
+  } else {
+    return(NA)
+  }
+}
+
+delay.calculation <- function(df, symp.thresh) {
+  return(peak.pathogenloadtime(df) - symptom.onset(df, symp.thresh))
+}
+
+get.delay.peakload.symponset <- function(data, vals, symp.thresh, var_name) {
+  delays.df <- data.frame(placeholder_name=integer(), 
+                          delay.peakload.symponset=integer(),
+                          symp.thresh=integer())
+  names(delays.df)[names(delays.df) == "placeholder_name"] = var_name
+  
+  for (v in vals) {
+    df= data[data[var_name]==v,]
+    delay.peakload.symponset= delay.calculation(df, symp.thresh)
+    dftoadd= data.frame(v, delay.peakload.symponset)
+    names(dftoadd)= c(var_name, "delay.peakload.symponset")
+    delays.df <- rbind(delays.df, dftoadd)
+  }
+  
+  delays.df$symp.thresh = symp.thresh
+  
+  return(delays.df)
+}
+```
+
+
+These first three sets of parameters were used in King et al., and I use them 
+here to 1) plot immune response and pathogen load over time and 2) plot a 
+simple model of transmission where symptoms are determined by a pathogen load 
+threshold (explained below). I varied the infectious dose values by a factor of 
+10^2, set the time steps as 0.0001 from 0 to 2 units, and designated the 
+proportionality constant between pathogen load and transmission potential to 
+be 10^-3.
+```{r}
+params20 <- c(r=20, k=3.5, y=10^-4, a=1, d=.5)
+params40 <- c(r=40, k=3.5, y=10^-4, a=1, d=.5)
+params70 <- c(r=70, k=3.5, y=10^-4, a=1, d=.5)
+params100 <- c(r=100, k=3.5, y=10^-4, a=1, d=.5)
+params130 <- c(r=130, k=3.5, y=10^-4, a=1, d=.5)
+params150 <- c(r=150, k=3.5, y=10^-4, a=1, d=.5)
+```
+
+I plotted immune response and pathogen load over time to visualize within-host 
+dynamics over the course of the infection. These plots do not differentiate 
+between symptomatic and asymptomatic time periods, but they do differentiate 
+infectious dose by color (from smallest to highest, there is a gradient from 
+light grey to black). 
+```{r}
+plot.dynamics.panel <- function(dose, variable_params, col, label, tstep, model,
+                                ylow, yhigh, xlow, xhigh, symp.thresh=NA) {
+  
+  data <- desolve_function(tstep, variable_params, model, dose) 
+
+  
+  symptomatic <- symptomatic.times(data, symp.thresh)
+  
+  plot(data$time, log10(data$immune), col=col, type="l", lty=5,
+       ylim=c(ylow, yhigh), xlim=c(xlow, xhigh),
+       xlab="", ylab=expression(paste(log[10]," Abundance")), 
+       main=paste("Infectious Dose:", dose),
+       cex.lab=2, cex.axis=2, cex.main=2,
+       xaxt="n")
+  axis(1, tcl=-.5, cex.axis=2, mgp=c(3, 2, 0))
+  text(0.05, 7.3, labels=label, font=2, cex=2)
+  mtext("Time", side=1, line=4, cex=2)
+  
+  if (is.na(symp.thresh)) {
+    boldedwidth <- 1
+  } else {
+    boldedwidth <- 3
+  }
+  
+  abline(h=log10(symp.thresh), lty=2, col="red")
+  
+  lines(data$time, log10(data$pathogen), col=col)
+  
+  # Immune response dynamics and lines bolded when symptomatic
+  lines(symptomatic, log10(data[time %in% symptomatic,]$immune), 
+        col=col, lty=5, lwd=boldedwidth)
+
+  # Adding in dotted line to mark peak pathogen load
+  abline(v = peak.pathogenloadtime(data), col=col, lty=3)
+
+}
+
+# Plotting immune response over time
+
+cols <- data.frame(lowid="#009E73", medid="#871a6e",  highid="#E69F00")
+
+{
+  postscript(file="./Figures/More King Model Dynamics.eps", paper="special", horizontal=FALSE,
+           height=10, width=10)
+  
+  par(mfrow=c(2, 2), mar=c(5.1, 6.1, 5.1, 3.1), oma=c(0, 0, 3, 0))
+  
+  plot.dynamics.panel(ids$low, k=3.5, r=40, cols$lowid, "A)", tstep,
+                      transmission.model,
+                      ylow=0, yhigh=3, xlow=0, xhigh=.4, NA)
+  
+  # The legend was moved via image editing afterwards
+  doses <- c("1 ID", "100 ID", "10000 ID")
+  
+  mtext(text="Pathogen Load and Immune Response Dynamics", side=3, line=6,
+        adj=-0.1, font=2, cex=2)
+  
+  
+  plot.dynamics.panel(ids$med, k=3.5, r=40, cols$medid, "B)", tstep, transmission.model, 
+                      ylow=0, yhigh=3, xlow=0, xhigh=.4, NA)
+  
+  plot.dynamics.panel(ids$high, k=3.5, r=40, cols$highid, "C)", tstep, transmission.model, 
+                      ylow=0, yhigh=3, xlow=0, xhigh=.4, NA)
+  
+  plot(1, type = "n", xlab="", ylab="", xaxt="n", yaxt="n", xlim=c(0, 1), 
+       ylim=c(0, 1), bty="n")
+  
+  par(mar=c(5, 0, 5, 0))
+  
+  # Legend adjusted with image manipulation after export
+  legend("center", rep(doses, 2),
+         col=c(cols$lowid, cols$medid, cols$highid), 
+         text.font=2, lty=rep(1:5, each=3), ncol=2, cex=1.3,
+         title="  Transmission Potential      Immune Response",
+         y.intersp=1.5, text.width=.3)
+  
+  dev.off()
+}
+
+theme.ggplot <- function(size, margins=1) {
+  return(theme(
+          plot.title = element_text(hjust = 0.5, vjust = 3, size=size + 5,
+                                    face="bold"), 
+          plot.margin = unit(c(margins, margins, margins, margins),"cm"),
+          legend.box.background = element_rect(color = "black", 
+                                             linetype="solid"),
+          legend.background=element_blank(),
+          legend.margin=margin(15, 30, 15, 20),
+          axis.title.y = element_text(margin = margin(r=20), size=size, 
+                                      face="bold"),
+          axis.title.y.right = element_text(margin = margin(l=20), size=size, 
+                                      face="bold"),
+          axis.title.x = element_text(margin = margin(t=30), size=size,
+                                      face="bold"),
+          axis.text.x = element_text(size=size, margin = margin(t=10)),
+          axis.text.y = element_text(size=size, margin = margin(r=10)),
+          axis.text.y.right = element_text(size=size, margin = margin(l=10)),
+          legend.key.size = unit(size, 'pt'),
+          legend.text = element_text(size=size),
+          legend.title = element_text(size=size),
+          legend.spacing.y = unit(15, 'pt')))
+}
+
+# Simpler version of King model dynamics
+schematicdf <- desolve_function(tstep, k=3.5, r=40, transmission.model, 1)
+modelcols <- c("Pathogen Load"="#e32730",
+               "Immune Response"="#170bbf")
+  
+postscript(file="./Figures/King Model Dynamics.eps", paper="special", horizontal=FALSE,
+           height=10, width=12)
+ggplot(schematicdf, aes(x=time, y=pathogen, 
+                        col="Pathogen Load")) + 
+    ggtitle("Model Dynamics") + 
+    geom_line(size=1.2) +
+    geom_line(aes(y=immune * 3000, col="Immune Response"), size=1.2) +
+    scale_color_manual(values=modelcols) +
+    scale_y_continuous(name = "Pathogen Load", labels=c(expression(0),
+                                                        expression(10^5),
+                                                        expression(2~"*"~10^5),
+                                                        expression(3~"*"~10^5)),
+                       sec.axis = sec_axis(~./3000, name="Immune Response")) +
+    xlab("Time") +
+    ylab("Abundance") + 
+    theme_classic() + 
+    theme.ggplot(30) + theme(legend.position=c(0.6, 0.75)) + labs(color=NULL)
+dev.off()
+```
+
+The first model I examine is one in which symptom onset and duration is 
+dependent only on pathogen load. This is represented by a dotted horizontal red 
+line depicting the threshold for symptoms. I am defining pre-symptomatic 
+transmission as reaching peak transmission potential before symptom onset. 
+This is a conservative way of estimating pre-symptomatic transmission. Given 
+this definition, there are two cases for transmission in this model: 1) symptoms 
+threshold is below peak pathogen load, and 2) symptoms threshold is above peak 
+pathogen load. The outlier case (symptoms threshold is at peak pathogen load) 
+doesn't signify much--it just suggests that the person is symptomatic only at 
+one point throughout the infection. I plotted three plots, each with three 
+lines; each plot signifies a different pathogen replication rate (r), and each 
+line signifies a different infectious dose.
+```{r}
+plot.transmission.lines <- function(df, color.path, color.immune, symp.thresh,
+                                    model) {
+  time <- df$time
+  path.load <- log10(df$P)
+  immune <- log10(df$X)
+  
+  lines(time, path.load, col=color.path, lwd=5)
+  lines(time, immune, col=color.immune, lwd=5, lty=2)
+  
+  if (model == "pathogen load") { 
+    symptoms <- path.load >= symp.thresh
+  } else if (model == "immune") {
+    symptoms <- immune >= symp.thresh
+  }
+  
+  if (any(symptoms)) {
+  lines(time[symptoms], path.load[symptoms], 
+        col=color.path, lwd=10)
+    
+  lines(time[symptoms], immune[symptoms], 
+        col=color.immune, lwd=10)
+  }
+}
+
+plot.simple.model.panel <- function(symp.thresh, data, 
+                                    col, cex, label, symptextx, symptexty,
+                                    immunetextx, immunetexty,
+                                    xlimlow, xlimhigh,
+                                    labeled=TRUE) {
+  if (labeled) {
+    xl <- "Time"
+    yl <- expression(paste("Abundance (", log[10], ")"))
+  } else {
+    xl <- ""
+    yl <- ""
+  }
+  
+  plot(1, type="n", xaxt="n", yaxt="n", xlab=xl, 
+       ylab=yl, 
+       xlim=c(xlimlow, xlimhigh), ylim=c(-1, 7),
+       cex.lab=cex, mgp=c(3, 2, 0))
+
+  
+  plot.transmission.lines(data, col, gray(0.25), symp.thresh,
+                          "pathogen load")
+  text(symptextx, symptexty, labels=label, col=col, cex=cex-0.5)
+  
+  abline(h=symp.thresh, lty=3, col="red", lwd=5)
+  text(immunetextx, immunetexty, labels="Immune Response", cex=cex-0.5)
+  
+}
+```
+
+The second model I examine is one in which symptom onset and duration is 
+dependent only on immune response. When immune response rises above a certain 
+threshold, the patient is symptomatic, as represented by a boldening of the 
+transmission potential line.
+```{r}
+plot.immune.model.panel <- function(symp.thresh, data, 
+                                    col, cex, label, symptextx, symptexty,
+                                    pltextx, pltexty,
+                                    xlimlow, xlimhigh,
+                                    labeled=TRUE) {
+  if (labeled) {
+    xl <- "Time"
+    yl <- expression(paste("Abundance (", log[10], ")"))
+  } else {
+    xl <- ""
+    yl <- ""
+  }
+  
+  plot(1, type="n", xaxt="n", yaxt="n", xlab=xl, 
+       ylab=yl, 
+       xlim=c(xlimlow, xlimhigh), ylim=c(-1, 7),
+       cex.lab=cex, mgp=c(3, 2, 0))
+
+  
+  plot.transmission.lines(data, gray(0.25), col, symp.thresh,
+                          "immune")
+  
+  rktime <- peak.pathogenloadtime(data)
+  stime <- symptom.onset(data, 10^symp.thresh)
+  
+  points(rktime, log10(data[data$time==rktime,]$X), col="#a38bc7", cex=4,
+         pch=19)
+  
+  points(stime, symp.thresh, col="#cac5df", cex=4, pch=19)
+    
+  text(symptextx, symptexty, labels=label, col=col, cex=cex-0.5)
+  
+  abline(h=symp.thresh, lty=3, col="red", lwd=5)
+  abline(v=peak.pathogenloadtime(data), col="#2f5739", lty=3, lwd=5)
+  text(pltextx, pltexty, labels="Pathogen Load", cex=cex-0.5)
+  # par(mar=c(5.1, 6.1, 4.1, 3.1))
+  # params= get.params(k, r)
+  # 
+  # datalow= desolve_f(.00001, k, r, lowid, m)
+  # datamed= desolve_f(.00001, k, r, medid, m)
+  # datahigh= desolve_f(.00001, k, r, highid, m)
+  # 
+  # plot(1, type="n", xlab='', ylab='', log='y', xlim=c(0, 0.5), ylim=c(1, 10^4), 
+  #      cex.lab=2, cex.axis=1.5, cex.main=2)
+  # plot.immune.model.line(datalow, m, symp.thresh, cols$lowid)
+  # plot.immune.model.line(datamed, m, symp.thresh, cols$medid)
+  # plot.immune.model.line(datahigh, m, symp.thresh, cols$highid)
+  # 
+  # if(vary=="k") {
+  #   mtext(text=bquote("Transmission when kill rate =" ~ .(k)), 
+  #         font=2, side=3, line=1, cex=2)
+  #   text(0.05, 6000, labels=label, font=2, cex=2)
+  # } else {
+  #   mtext(text=bquote("Transmission when replication rate =" ~ .(r)), 
+  #         font=2, side=3, line=1, cex=2)
+  #   text(0.25, 10^11, labels=label, font=2, cex=2)
+  # }
+}
+
+cols <- data.frame(lowid="#871a6e",  highid="#E69F00")
+
+datalow <- cutter(ids$high, time, params20, transmission.model)
+datahigh <- cutter(ids$high, time, params150, transmission.model)
+symp.thresh <- 5.4
+immune.sympthresh <- log10(15)
+
+{
+  postscript(file="./Figures/Model Schematics.eps", paper="special", 
+             horizontal=FALSE,
+             height=17, width=18)
+  
+  par(mfrow=c(2, 2), mar=c(5.1, 7.1, 1.1, 1.1), oma=c(0, 0, 5, 5))
+  
+    plot.simple.model.panel(symp.thresh, datahigh, "#D60270", 4, "Postsymptomatic",
+                            .079, 6.4,
+                            .085, 3.2,
+                            0, 0.12, labeled=FALSE)
+    
+    mtext(text="High Replication Rate", side=3, line=2, cex=3)
+    
+    plot.simple.model.panel(symp.thresh, datalow, "#0038A8", 4, "Asymptomatic",
+                            .17, 5.8,
+                            .13, 2,
+                            0, 0.3, labeled=FALSE)
+    
+    mtext(text="Low Replication Rate", side=3, line=2, cex=3)
+    
+    mtext(text="Pathogen Load Threshold", side=4, line=4, cex=3)
+  
+    plot.immune.model.panel(immune.sympthresh, datahigh, "#D60270", 4, 
+                            "Postsymptomatic",
+                            .0855, 3.2,
+                            .075, 6.4,
+                            0, 0.12)
+    
+    plot.immune.model.panel(immune.sympthresh, datalow, "#0038A8", 4, 
+                            "Presymptomatic",
+                            .16, 2,
+                            .17, 5.8,
+                            0, 0.3, labeled=FALSE)
+  
+     mtext(text="Immune Response Threshold", side=4, line=4, cex=3)
+     
+  dev.off()
+}
+
+
+# plot.immune.model.line <- function(data, m, symp.thresh, col) {
+#   data=data[transmission.potential(m, data$P) > 0,]
+#   lines(data$time, transmission.potential(m, data$P), col=col)
+#   symptomatic <- data[data$X >= symp.thresh,]
+#   lines(symptomatic$time, transmission.potential(m,symptomatic$P), lwd=3)
+# }
+```
+I now plot the infection dynamics (transmission potential and immune response)
+with varying replication rate and immune response kill rate parameters.
+For replication rate, while maintaining kill rate at 3.5, I look at 13 evenly 
+distributed values of replication rate from 10 to 130, as per the recommended 
+range stated in King et al. Then, while maintaining replication rate at 40, I 
+vary kill rate by increments of 1 from 1 to 10.
+```{r}
+#r varies. k= 3.5
+symp.thresh <- 5
+r <- seq(10, 130, by=10)
+
+png("./Figures/Immune-based symptoms varying r.png", width=1400, height=1000)
+
+par(mfrow=c(3, 4), mar=c(5.1, 6.1, 4.1, 3.1))
+
+for (i in seq(1, 12)) {
+  
+  plot.immune.model.panel(symp.thresh, round(r[i]), paste(LETTERS[i], ")"), 
+                          cols, 3.5, "r", m, desolve_function)
+
+  if (i == 9) {
+    mtext(text="Time", side=1, line=4, cex=2)
+    mtext(text="Transmission Potential", side=2, line=4, cex=2)
+    
+    legend(0.21, 8800, 
+           title="Relative Infectious Dose",
+           legend=c("1", "100", "10000", "Symptoms"), 
+           col=c(cols$lowid, cols$medid, cols$highid, cols$lowid), 
+           lwd=c(1, 1, 1, 3), cex=1.5, text.font=2)
+  }
+
+}
+
+dev.off()
+
+#k varies. r=40.
+
+symp.thresh <- 5
+
+k <- seq(1, 10, by=1) 
+
+png("./Figures/Immune-based symptoms varying y many.png", width=1600, height=1000)
+
+par(mfrow=c(3, 4), mar=c(5.1, 6.1, 4.1, 3.1))
+
+for (i in seq(1, 11)) {
+  
+  plot.immune.model.panel(symp.thresh, 40, 
+                          paste(LETTERS[i], ")"), cols, k[i], "k", desolve_function)
+  
+  if (i == 9) {
+    mtext(text="Time", side=1, line=4, cex=2)
+    mtext(text="Transmission Potential", side=2, line=4, cex=2)
+    
+    legend(0.27, 10000, 
+           title="Relative Infectious Dose",
+           legend=c("1", "100", "10000", "Symptoms"), 
+           col=c(cols$lowid, cols$medid, cols$highid, cols$lowid), lwd=c(1, 1, 1, 3), 
+           cex=1.5, text.font=2)
+  }
+  
+}
+
+dev.off()
+
+```
+Here I simulate a group of 100 people with r values ranging uniformly from 10 to
+130. Each group will be "resimulated" with a different infectious dose.
+Then, I'm calculating the frequency of presymptomatic transmission per 
+dose.
+```{r}
+get.presymp <- function(df, symp.thresh) {
+  delay= peak.pathogenloadtime(df) - symptom.onset(df, symp.thresh)
+  if(!(is.na(delay)) && delay < 0) {
+    return(TRUE)
+  } else{
+    return(FALSE)
+  }
+}
+
+get.freqpresymp <- function(df, symp.thresh) {
+  presymp= 0
+  
+  patients= unique(df$r)
+  for (p in  patients) {
+    patientdf= df[df$r==p,]
+    if(get.presymp(patientdf, symp.thresh)) {
+      presymp = presymp + 1
+    }
+  }
+  
+  freq.presymp= presymp / length(patients)
+  
+  return(freq.presymp)
+}
+
+get.freqsymp.bydose <- function(dosevals, varyingdose.df, symp.thresh) {
+  
+  freqpresymp.bydose <- data.frame(dose=integer(), freq.presymp=integer())
+
+  for (d in dosevals) {
+    df= varyingdose.df[varyingdose.df$dose==d,]
+    dftoadd= data.frame(d, get.freqpresymp(df, symp.thresh))
+    names(dftoadd)= c("dose", "freq.presymp")
+    freqpresymp.bydose <- rbind(freqpresymp.bydose, dftoadd)
+  }
+  
+  return(freqpresymp.bydose)
+}
+
+get.patientsims <- function(k, dosevals, popsize) {
+  patientsims <- data.frame(k= k, r=runif(popsize, 10, 130), dose=rep(dosevals, each=popsize))
+
+  # Below, varyingdose is a list.
+  patientsims <- do.call(rbind, mapply(desolve_function, 10^-4, patientsims$k, 
+                                       patientsims$r, patientsims$dose, 
+                                       SIMPLIFY = FALSE))
+  
+  return(patientsims)
+}
+
+m <- 10^-3
+low.sympthresh <- 5
+med.sympthresh <- 10
+high.sympthresh <- 15
+medk <- 4
+medr <- 70
+
+dosevals <- 10^seq(0,10)
+
+#Generating patient simulations for varying population sizes
+varyingdose.3pop <- get.patientsims(medk, dosevals, 3, m)
+varyingdose.10pop <- get.patientsims(medk, dosevals, 10, m)
+varyingdose.100pop <- get.patientsims(medk, dosevals, 100, m)
+
+write.csv(varyingdose.3pop, "Dataframe with varying doses and r values (indicating different patients) pop 3.csv")
+write.csv(varyingdose.10pop, "Dataframe with varying doses and r values (indicating different patients) pop 10.csv")
+write.csv(varyingdose.100pop, "Dataframe with varying doses and r values (indicating different patients) pop 100.csv")
+
+#Accessing patient sims via csv files
+
+varyingdose.100pop <- read.csv("Dataframe with varying doses and r values (indicating different patients) pop 100.csv")
+
+varyingdose.10pop <- read.csv("Dataframe with varying doses and r values (indicating different patients) pop 10.csv")
+
+varyingdose.3pop <- read.csv("Dataframe with varying doses and r values (indicating different patients) pop 3.csv")
+
+#Generating the frequency of presymptomatic transmission for various population sizes (3, 10, 100) and symptom thresholds (low=5, med=10, high=15)
+freqpresymp.bydose.lowsympthresh.pop10 <- get.freqsymp.bydose(dosevals, varyingdose.10pop, low.sympthresh, m)
+freqpresymp.bydose.medsympthresh.pop10 <- get.freqsymp.bydose(dosevals, varyingdose.10pop, med.sympthresh, m)
+freqpresymp.bydose.highsympthresh.pop10 <- get.freqsymp.bydose(dosevals, varyingdose.10pop, high.sympthresh, m)
+write.csv(freqpresymp.bydose.lowsympthresh.pop10,"Frequency of Presymptomatic Transmission by Dose (low symptom threshold, group population at 10).csv")
+write.csv(freqpresymp.bydose.medsympthresh.pop10,"Frequency of Presymptomatic Transmission by Dose (med symptom threshold, group population at 10).csv")
+write.csv(freqpresymp.bydose.highsympthresh.pop10,"Frequency of Presymptomatic Transmission by Dose (high symptom threshold, group population at 10).csv")
+
+freqpresymp.bydose.lowsympthresh.pop100 <- get.freqsymp.bydose(dosevals, varyingdose.100pop, low.sympthresh, m)
+freqpresymp.bydose.medsympthresh.pop100 <- get.freqsymp.bydose(dosevals, varyingdose.100pop, med.sympthresh, m)
+freqpresymp.bydose.highsympthresh.pop100 <- get.freqsymp.bydose(dosevals, varyingdose.100pop, high.sympthresh, m)
+write.csv(freqpresymp.bydose.lowsympthresh.pop100,"Frequency of Presymptomatic Transmission by Dose (low symptom threshold, group population at 100).csv")
+write.csv(freqpresymp.bydose.medsympthresh.pop100,"Frequency of Presymptomatic Transmission by Dose (med symptom threshold, group population at 100).csv")
+write.csv(freqpresymp.bydose.highsympthresh.pop100,"Frequency of Presymptomatic Transmission by Dose (high symptom threshold, group population at 100).csv")
+
+freqpresymp.bydose.lowsympthresh.pop3 <- get.freqsymp.bydose(dosevals, varyingdose.3pop, low.sympthresh, m)
+freqpresymp.bydose.medsympthresh.pop3 <- get.freqsymp.bydose(dosevals, varyingdose.3pop, med.sympthresh, m)
+freqpresymp.bydose.highsympthresh.pop3 <- get.freqsymp.bydose(dosevals, varyingdose.3pop, high.sympthresh, m)
+write.csv(freqpresymp.bydose.lowsympthresh.pop3,"Frequency of Presymptomatic Transmission by Dose (low symptom threshold, group population at 3).csv")
+write.csv(freqpresymp.bydose.medsympthresh.pop3,"Frequency of Presymptomatic Transmission by Dose (med symptom threshold, group population at 3).csv")
+write.csv(freqpresymp.bydose.highsympthresh.pop3,"Frequency of Presymptomatic Transmission by Dose (high symptom threshold, group population at 3).csv")
+
+#Subsequent uses of these dataframes are called from the csv files
+
+freqpresymp.bydose.lowsympthresh.pop3 <- read.csv("Frequency of Presymptomatic Transmission by Dose (low symptom threshold, group population at 3).csv")
+
+freqpresymp.bydose.medsympthresh.pop3 <- read.csv("Frequency of Presymptomatic Transmission by Dose (med symptom threshold, group population at 3).csv")
+
+freqpresymp.bydose.highsympthresh.pop3 <- read.csv("Frequency of Presymptomatic Transmission by Dose (high symptom threshold, group population at 3).csv")
+
+freqpresymp.bydose.lowsympthresh.pop10 <- read.csv("Frequency of Presymptomatic Transmission by Dose (low symptom threshold, group poulation at 10).csv")
+
+freqpresymp.bydose.medsympthresh.pop10 <- read.csv("Frequency of Presymptomatic Transmission by Dose (med symptom threshold, group population at 10).csv")
+
+freqpresymp.bydose.highsympthresh.pop10 <- read.csv("Frequency of Presymptomatic Transmission by Dose (high symptom threshold, group population at 10).csv")
+
+freqpresymp.bydose.lowsympthresh.pop100 <- read.csv("Frequency of Presymptomatic Transmission by Dose (low symptom threshold, group population at 100).csv")
+
+freqpresymp.bydose.medsympthresh.pop100 <- read.csv("Frequency of Presymptomatic Transmission by Dose (med symptom threshold, group population at 100).csv")
+
+freqpresymp.bydose.highsympthresh.pop100 <- read.csv("Frequency of Presymptomatic Transmission by Dose (high symptom threshold, group population at 100).csv")
+
+
+plot.varyingdose <- function(presympfreq.bydose, symp.thresh, pointsize, textsize, col, pop.size) {
+  ggplot(presympfreq.bydose, aes(x=dose, y=freq.presymp)) + 
+    ggtitle(paste("Symptom threshold: ",symp.thresh, 
+                  " Population size: ",pop.size)) + 
+    geom_point(color= col, size=pointsize) + 
+    geom_line(color=col, size=pointsize/2) +
+  ylab("Frequency of \n Pre-symptomatic Transmission") +
+  scale_x_continuous(name="Infectious Dose", breaks=10^seq(0,7), 
+                     labels=c("10^0"=expression(10^0), "10^1"=expression(10^1), 
+                              "10^2"=expression(10^2), "10^3"=expression(10^3), 
+                              "10^4"=expression(10^4), "10^5"=expression(10^5), 
+                              "10^6"=expression(10^6), "10^7"=expression(10^7)), 
+                     trans="log10") +
+  theme(axis.text= element_text(size=textsize - 5), 
+        panel.background=element_rect(fill="white", colour="black"),
+        plot.title=element_text(size=textsize - 5, face = "bold",
+                                margin = margin(b=10), hjust=.5),
+        axis.title.y = element_text(margin = margin(r=20), size=textsize),
+        axis.title.x = element_text(margin = margin(t=20), size=textsize)) 
+}
+
+png("Cohort 100 Freq Presymp low symp thresh.png", width=800, height=700)
+plot.varyingdose(
+  freqpresymp.bydose.lowsympthresh.pop100[
+    freqpresymp.bydose.lowsympthresh.pop100$dose < 10^8,], 
+  low.sympthresh, 3, 30, "forestgreen", 100)
+dev.off()
+
+png("Cohort 100 Freq Presymp med symp thresh.png", width=800, height=700)
+plot.varyingdose(
+  freqpresymp.bydose.medsympthresh.pop100[
+    freqpresymp.bydose.medsympthresh.pop100$dose < 10^8,], 
+  med.sympthresh, 3, 30, "forestgreen", 100)
+dev.off()
+
+png("Cohort 100 Freq Presymp high symp thresh.png", width=800, height=700)
+plot.varyingdose(
+  freqpresymp.bydose.highsympthresh.pop100[
+    freqpresymp.bydose.highsympthresh.pop100$dose < 10^8,], 
+  high.sympthresh, 3, 30, "forestgreen", 100)
+dev.off()
+
+plot.varyingdose(freqpresymp.bydose.lowsympthresh.pop10, low.sympthresh, 10, 30, cols[3], 10)
+plot.varyingdose(freqpresymp.bydose.medsympthresh.pop10, med.sympthresh, 10, 30, cols[3], 10)
+plot.varyingdose(freqpresymp.bydose.highsympthresh.pop10, high.sympthresh, 10, 30, cols[3], 10)
+
+plot.varyingdose(freqpresymp.bydose.lowsympthresh.pop3, low.sympthresh, 10, 30, cols[3], 3)
+plot.varyingdose(freqpresymp.bydose.medsympthresh.pop3, med.sympthresh, 10, 30, cols[3], 3)
+plot.varyingdose(freqpresymp.bydose.highsympthresh.pop3, high.sympthresh, 10, 30, cols[3], 3)
+```
+
+Now, I'm going to vary r and plot the delay between
+peak pathogen load and symptom onset against various r values. 
+
+```{r}
+r_variable <- seq(10, 130, by=10)
+
+#Dynamically, varyingr is a list.
+varyingr <- data.frame(k= 3.5, r=r_variable, dose=10^5)
+varyingr <- do.call(rbind, mapply(desolve_function, tstep, k=varyingr$k, 
+                                  r=varyingr$r, varyingr$dose, 
+                                  MoreArgs=list(model=transmission.model),
+                                  SIMPLIFY = FALSE))
+write.csv(varyingr, "Varyingr.csv")
+varyingr <- read.csv("Varyingr.csv")
+
+delays.byr.lowsympthresh <- get.delay.peakload.symponset(varyingr, r_variable, low.sympthresh, "r")
+delays.byr.medsympthresh <- get.delay.peakload.symponset(varyingr, r_variable, med.sympthresh, "r")
+delays.byr.highsympthresh <- get.delay.peakload.symponset(varyingr, r_variable, high.sympthresh, "r")
+
+write.csv(delays.byr.lowsympthresh, "Delays by r low symp thresh.csv")
+write.csv(delays.byr.medsympthresh, "Delays by r med symp thresh.csv")
+write.csv(delays.byr.highsympthresh, "Delays by r high symp thresh.csv")
+
+delays.byr.lowsympthresh <- read.csv("Delays by r low symp thresh.csv")
+delays.byr.medsympthresh <- read.csv("Delays by r med symp thresh.csv")
+delays.byr.highsympthresh <- read.csv("Delays by r high symp thresh.csv")
+```
+
+I do the same with k.
+
+```{r}
+
+#Dynamically, varyingk is a list.
+
+k_variable <- seq(1,20, by=1.25)
+varyingk <- data.frame(k=k_variable, r=40, dose=10^5)
+varyingk <- do.call(rbind, mapply(desolve_function, tstep, k=varyingk$k, 
+                                  r=varyingk$r, varyingk$dose, 
+                                  MoreArgs=list(model=transmission.model),
+                                  SIMPLIFY = FALSE))
+write.csv(varyingk, "Varyingk.csv")
+varyingk <- read.csv("Varyingk.csv")
+
+delays.byk.lowsympthresh <- get.delay.peakload.symponset(varyingk, 
+                                                             k_variable, 
+                                                             low.sympthresh, 
+                                                             "k")
+delays.byk.medsympthresh <- get.delay.peakload.symponset(varyingk, 
+                                                             k_variable, 
+                                                             med.sympthresh, 
+                                                             "k")
+delays.byk.highsympthresh <- get.delay.peakload.symponset(varyingk, 
+                                                              k_variable, 
+                                                              high.sympthresh, 
+                                                              "k")
+
+write.csv(delays.byk.lowsympthresh, "Delays by k low symp thresh.csv")
+write.csv(delays.byk.medsympthresh, "Delays by k med symp thresh.csv")
+write.csv(delays.byk.highsympthresh, "Delays by k high symp thresh.csv")
+
+delays.byk.lowsympthresh <- read.csv("Delays by k low symp thresh.csv")
+delays.byk.medsympthresh <- read.csv("Delays by k med symp thresh.csv")
+delays.byk.highsympthresh <- read.csv("Delays by k high symp thresh.csv")
+```
+
+We vary infectious dose with r and k set to 40 and 4, respectively.
+```{r}  
+#VDynamically, varyingdose is a list.
+
+# r = 40, k = 3.5
+varyingdose <- data.frame(k= 3.5, r= 40, dose=dosevals)
+varyingdose <- do.call(rbind, mapply(desolve_function, 10^-5, 
+                                  varyingdose$k, varyingdose$r, 
+                                  varyingdose$dose, 
+                                  MoreArgs=list(model=transmission.model),
+                                  SIMPLIFY = FALSE))
+write.csv(varyingdose, "Varying Dose.csv")
+varyingdose <- read.csv("Varying Dose.csv")
+
+delays.bydose.lowsympthresh <- get.delay.peakload.symponset(
+  varyingdose, dosevals, low.sympthresh, "dose")
+delays.bydose.medsympthresh <- get.delay.peakload.symponset(
+  varyingdose, dosevals, med.sympthresh, "dose")
+delays.bydose.highsympthresh <- get.delay.peakload.symponset(
+  varyingdose, dosevals, high.sympthresh, "dose")
+
+write.csv(delays.bydose.lowsympthresh, 
+          "Delays by dose low symp thresh.csv")
+write.csv(delays.bydose.medsympthresh, 
+          "Delays by dose med symp thresh.csv")
+write.csv(delays.bydose.highsympthresh, 
+          "Delays by dose high symp thresh.csv")
+
+delays.bydose.lowsympthresh <- read.csv(
+  "Delays by dose low symp thresh.csv")
+delays.bydose.medsympthresh <- read.csv(
+  "Delays by dose med symp thresh.csv")
+delays.bydose.highsympthresh <- read.csv(
+  "Delays by dose high symp thresh.csv")
+```
+
+Here, I plot the results. These are scatterplots showing delay between peak pathogen load and symptom onset vs. either replication rate r or immune response recruitment rate gamma.
+```{r}
+plot.varyingr <- function(delaysbyr1, delaysbyr2, delaysbyr3, size, ylow, yhigh,
+                          xlow, xhigh) {
+  cols <- colorRampPalette(c("deepskyblue", "deepskyblue4"))
+  cols <- cols(3)
+  ggplot(delaysbyr1, aes(x=r, y=delay.peakload.symponset, 
+                         color = as.character(symp.thresh))) + theme_classic() +
+  theme.ggplot(size) + theme(legend.position = c(0.8, 0.2)) + ylim(ylow, yhigh) + 
+    xlim(xlow, xhigh) +
+  geom_point(size=4) + 
+    geom_line() + geom_point(data=delaysbyr2, size=4) + 
+    geom_line(data=delaysbyr2) + geom_point(data=delaysbyr3, size=4) +
+    geom_line(data=delaysbyr3) +
+  geom_hline(yintercept=0, linetype="dashed", color="black", lwd=1)+
+    geom_point(aes(x=40, 
+                   y=delaysbyr1
+                   [r==40, "delay.peakload.symponset"]), 
+               color="red", size=4) + 
+    geom_point(aes(x=40, 
+                   y=delaysbyr2
+                   [r==40, "delay.peakload.symponset"]), 
+               color="red", size=4) +
+    geom_point(aes(x=40, 
+                   y=delaysbyr3
+                   [r==40, "delay.peakload.symponset"]), 
+               color="red", size=4) +
+  geom_text(aes(x=160, y=-0.001, label = "Pre-symptomatic"),
+                color="black", size=9) +
+  geom_text(aes(x=160, y=0.001, label = "Post-symptomatic"),
+                color="black", size=9) +
+  xlab("Replication Rate (r)") + 
+  ylab("Delay Between Symptom Onset \n and Peak Pathogen Load") +
+  ggtitle(paste("Varying Replication Rate (r) and Symptom Threshold")) +
+  theme(strip.background = element_rect(fill="lightblue")) + scale_color_manual(name="Symptom Threshold", values = c("5"= cols[1], "10"= cols[2], "15"= cols[3]))
+}
+
+postscript(file="./Figures/Delays varying r.eps", paper="special", horizontal=FALSE, 
+           height=10, width=15)
+plot.varyingr(delays.byr.lowsympthresh, delays.byr.medsympthresh, 
+              delays.byr.highsympthresh, 30, -.02, .005, 0, 175)
+dev.off()
+
+plot.varyinggamma <- function(delaysbygamma1, delaysbygamma2, delaysbygamma3, size) {
+  cols <- colorRampPalette(c("darkgreen", "darkseagreen3"))
+  cols <- cols(3)
+  ggplot(delaysbygamma1[delaysbygamma1$gamma < .000125 & 
+                          delaysbygamma1$gamma > 0.0000625,], 
+         aes(x=gamma, y=delay.peakload.symponset, 
+             color=as.character(symp.thresh))) + theme_classic() + 
+      theme.ggplot(size) +
+    geom_point(data=delaysbygamma2[delaysbygamma2$gamma < .000125 &
+                                    delaysbygamma2$gamma > 0.0000625,]) + 
+    geom_line(data=delaysbygamma2[delaysbygamma2$gamma < .000125 &
+                                    delaysbygamma2$gamma > 0.0000625,]) +
+    geom_point(data=delaysbygamma3[delaysbygamma3$gamma < .000125 &
+                                    delaysbygamma3$gamma > 0.0000625,]) + 
+    geom_line(data=delaysbygamma3[delaysbygamma3$gamma < .000125 &
+                                    delaysbygamma3$gamma > 0.0000625,]) +
+    #geom_hline(yintercept=0, linetype="dashed", color="black", lwd=1)+
+    #geom_text(aes(x=.00006, y=-0.0001, label = "Pre-symptomatic Transmission"),
+    #              color="black") +
+    #geom_text(aes(x=.00006, y=0.00015, label = "Post-symptomatic Transmission"),
+    #              color="black") +
+  xlab(bquote("Immune Response Recruitment Rate (" ~ gamma ~ ")")) + 
+  ylab("Delay Between Symptom Onset and Peak Pathogen Load") + 
+    ylim(c(-0.0001, 0.006)) +
+  ggtitle(bquote("Varying Immune Response Recruitment Rate (" ~ gamma ~ ") and Symptom Threshold")) +
+  theme(strip.background = element_rect(fill="lightblue")) + scale_color_manual(name="Symptom Threshold", values = c("5"= cols[1], "10"= cols[2], "15"= cols[3]))
+}
+
+delays.bygamma.lowsympthresh$symp.thresh <- low.sympthresh
+delays.bygamma.medsympthresh$symp.thresh <- med.sympthresh
+delays.bygamma.highsympthresh$symp.thresh <- high.sympthresh
+
+png("Delays Varying Gamma.png", width=1000, height=800)
+plot.varyinggamma(delays.bygamma.lowsympthresh, delays.bygamma.medsympthresh, delays.bygamma.highsympthresh,20)
+dev.off()
+
+plot.varyingk <- function(delaysbyk1, delaysbyk2, delaysbyk3, size) {
+  psize <- 4
+  cols <- colorRampPalette(c("#b6addb", "#5765ab"))
+  cols <- cols(3)
+  ggplot(delaysbyk1, aes(x=k, y=delay.peakload.symponset, 
+                         color = as.character(symp.thresh))) + theme_classic() +
+  theme.ggplot(size) + theme(legend.position=c(0.8, 0.8)) +
+  geom_point(size=psize) + geom_line() + geom_point(data=delaysbyk2, size=psize) + 
+    geom_line(data=delaysbyk2) + geom_point(data=delaysbyk3, size=psize) +
+    geom_line(data=delaysbyk3) +
+  geom_hline(yintercept=0, linetype="dashed", color="black", lwd=1)+
+    geom_point(aes(x=3.5, 
+                   y=delaysbyk1
+                   [k==3.5, "delay.peakload.symponset"]), 
+               color="red", size=4) +
+    geom_point(aes(x=3.5, 
+                   y=delaysbyk2
+                   [k==3.5, "delay.peakload.symponset"]), 
+               color="red", size=4) +
+    geom_point(aes(x=3.5, 
+                   y=delaysbyk3
+                   [k==3.5, "delay.peakload.symponset"]), 
+               color="red", size=4) +
+  geom_text(aes(x=11.5, y=-0.0005, label = "Pre-symptomatic"),
+                color="black", size=9) +
+  geom_text(aes(x=11.5, y=0.0006, label = "Post-symptomatic"),
+                color="black", size=9) +
+  ylab("Delay Between Symptom Onset \n and Peak Pathogen Load") + 
+  ylim(c(-.006, .01)) + 
+  scale_x_continuous(name="Kill Rate (k)", 
+                     breaks=seq(1, 8.5, by=2.5),
+                     limits=c(1, 12.5)) +
+  ggtitle(paste("Varying Kill Rate (k) and Symptom Threshold")) +
+  theme(strip.background = element_rect(fill="lightblue")) + scale_color_manual(name="Symptom Threshold", values = c("5"= cols[1], "10"= cols[2], "15"= cols[3]))
+}
+
+postscript(file="./Figures/Delays varying k.eps", paper="special", horizontal=FALSE,
+           height=10, width=16)
+plot.varyingk(delays.byk.lowsympthresh, delays.byk.medsympthresh, 
+              delays.byk.highsympthresh, 30)
+dev.off()
+
+# panel1 <- plot.varyingdose.delays(delays.bydoser20.lowsympthresh, 
+#                                   delays.bydoser20.medsympthresh, 
+#                                   delays.bydoser20.highsympthresh, 20,
+#                                   30, TRUE, 5)
+
+# leg <- get_legend(panel1)
+# 
+# panel1 <- panel1 + theme(legend.position="none")
+# panel2 <- plot.varyingdose.delays(delays.bydoser30.lowsympthresh, 
+#                                   delays.bydoser30.medsympthresh, 
+#                                   delays.bydoser30.highsympthresh, 30, 
+#                                   30, TRUE, 5, TRUE) + 
+#     theme(legend.position="none")
+# panel3 <- plot.varyingdose.delays(delays.bydoser70.lowsympthresh, 
+#                                   delays.bydoser70.medsympthresh, 
+#                                   delays.bydoser70.highsympthresh, 70, 
+#                                   30, TRUE, 5, TRUE) + 
+#     theme(legend.position="none")
+# 
+# multipaneldelaydose <- ggarrange(panel1, panel2, panel3, leg, 
+#                                  ncol=2, nrow=2)
+plot.varyingdose.delays <- function(delaysbydose.lowsympthresh, 
+                                    delaysbydose.medsympthresh, 
+                                    delaysbydose.highsympthresh, r,
+                                    size, paneled=FALSE,
+                                    hidetext=FALSE) {
+  psize <- 4
+  cols <- colorRampPalette(c("#b6addb", "#5765ab"))
+  cols <- cols(3)
+  
+    unlabeled <- ggplot(delaysbydose.lowsympthresh, aes(x=dose, y=delay.peakload.symponset, color=as.character(symp.thresh))) + geom_point(size=psize) + 
+      geom_line() +
+    geom_point(data=delaysbydose.medsympthresh, size=psize) + 
+      geom_line(data=delaysbydose.medsympthresh) + 
+      theme_classic() +
+      theme.ggplot(size, 0.7) + theme(legend.position=c(0.8, 0.8)) +
+      geom_point(data=delaysbydose.highsympthresh, size=psize) + 
+      geom_line(data=delaysbydose.highsympthresh) + 
+      geom_hline(yintercept = 0, linetype="dashed") +
+      geom_point(aes(x=10^5, 
+                   y=delaysbydose.lowsympthresh
+                   [dose==10^5, "delay.peakload.symponset"]), 
+               color="red", size=psize) +
+      geom_point(aes(x=10^5, 
+                   y=delaysbydose.medsympthresh
+                   [dose==10^5, "delay.peakload.symponset"]), 
+               color="red", size=psize) +
+      geom_point(aes(x=10^5, 
+                   y=delaysbydose.highsympthresh
+                   [dose==10^5, "delay.peakload.symponset"]), 
+               color="red", size=psize) +
+    ggtitle(paste("Varying Infectious Dose and Symptom Threshold")) +
+  theme(strip.background = element_rect(fill="lightblue")) + scale_color_manual(name="Symptom Threshold", values = c("5"= cols[1], "10"= cols[2], "15"= cols[3])) +
+  scale_x_continuous(trans='log10', 
+                     breaks=c(10^2, 10^5, 10^8),
+                     labels=c(expression(10^2), 
+                              expression(10^5),
+                              expression(10^8)))
+    
+    if (!paneled) {
+      labeled <- unlabeled + 
+      xlab("Infectious Dose") + 
+      ylab("Delay Between Symptom Onset \n and Peak Pathogen Load")
+      
+    } else {
+      labeled <- unlabeled + xlab("") + ylab("") +
+        geom_text(aes(x=10^7, y=.008), 
+                label = paste("Replication Rate: ", r),
+                color="black", size=8)
+    }
+    
+    if (!hidetext) {
+      labeled <- labeled + 
+        geom_text(aes(x=50, y=-0.0004, label = "Pre-symptomatic"),
+                color="black", size=9) +
+        geom_text(aes(x=50, y=0.0004, label = "Post-symptomatic"),
+                color="black", size=9) 
+    }
+  return(labeled)
+}
+
+postscript(file="./Figures/Delays varying dose maybe.eps", paper="special", horizontal=FALSE,
+           height=10, width=15)
+
+plot.varyingdose.delays(delays.bydose.lowsympthresh, 
+                        delays.bydose.medsympthresh, 
+                        delays.bydose.highsympthresh, 20,
+                        30, FALSE)
+# annotate_figure(multipaneldelaydose, 
+#                 left = 
+#                   textGrob(
+#                     "Delay Between Symptom Onset \nand Peak Pathogen Load", 
+#                     rot=90, 
+#                     hjust=.8,
+#                     vjust=0.8, 
+#                     gp = gpar(fontsize=30)), 
+#                 
+#                 bottom = 
+#                   textGrob("Infectious Dose", 
+#                     hjust=1.3, 
+#                     vjust=-1,
+#                     gp = gpar(fontsize=30)))
+dev.off()
+
+```
+
+On 11/12/2022, I will create a contour plot showing the relationship between
+replication rate, infectious dose, and the delay between symptom onset and
+peak pathogen load.
+
+```{r}
+simulate.delays.helper <- function(variable_params, dose, tstep, symp.thresh) {
+  df = desolve_function(tstep, variable_params, dose)
+  return(delay.calculation(df, symp.thresh))
+}
+
+simulate.delays <- function(doses, rs, symp.thresh, tstep) {
+  paramsdf <- expand.grid(rs, doses)
+  names(paramsdf) <- c("r", "dose")
+  delay <- mapply(simulate.delays.helper, c(r=paramsdf$r, k=3.5), paramsdf$dose, 
+                     tstep=tstep,
+                    symp.thresh=symp.thresh)
+  #log the infectious dose values
+  paramsdf$dose <- log10(paramsdf$dose)
+  return(cbind(paramsdf, delay))
+}
+
+# Generate all delays between all possible combinations of replication rate and
+# infectious dose
+
+dosevals <- 10^seq(0,9)
+rvals <- seq(10, 130, by=10)
+
+delays.lowsympthresh <- simulate.delays(dosevals, rvals, low.sympthresh, 
+                                             tstep, m)
+
+delays.medsympthresh <- simulate.delays(dosevals, rvals, med.sympthresh, 
+                                             tstep, m)
+
+delays.highsympthresh <- simulate.delays(dosevals, rvals, high.sympthresh, 
+                                              tstep, m)
+
+write.csv(delays.lowsympthresh, "Delays contour plot low symp thresh.csv")
+write.csv(delays.medsympthresh, "Delays contour plot med symp thresh.csv")
+write.csv(delays.highsympthresh, "Delays contour plot high symp thresh.csv")
+
+delays.lowsympthresh <- read.csv("Delays contour plot low symp thresh.csv")
+delays.medsympthresh <- read.csv("Delays contour plot med symp thresh.csv")
+delays.highsympthresh <- read.csv("Delays contour plot high symp thresh.csv")
+
+#Damie
+delays.lowsympthresh$posneg <- ifelse(delays.lowsympthresh$delay > 0, 
+                                      'post','pre')
+delays.lowsympthresh$delay[delays.lowsympthresh$delay==0] <- NA
+
+# Filled contourplot using base R
+png("Contour Plot Delays.png", width=900, height=800)
+par(mar=c(5, 5, 5, 5))
+
+ggplot(delays.lowsympthresh, aes(x = r, y = dose, fill = delay)) + 
+  theme(panel.background = element_blank(), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        axis.text.x=element_text(size=20),
+        axis.text.y=element_text(size=20),
+        axis.title.x=element_text(size=20),
+        axis.title.y=element_text(size=20)) +
+  xlab("Replication Rate") + ylab("Infectious Dose") +
+  scale_x_continuous(expand=c(0,0))+
+  scale_y_continuous(expand=c(0,0))+
+  geom_tile(aes(color=posneg),size=1.2) + scale_fill_gradient2(
+    low='blue',mid='white',high='black',midpoint=0, na.value = "orange")
+dev.off()
+
+```
+
+
+Checking population growth rate vs. pathogen load
+```{r}
+
+exampledat <- desolve_function(tstep, 3.5, 40, 1, 1)
+exampledat$growth <- exampledat$r * exampledat$transmission_potential - 
+  exampledat$k * exampledat$immune * exampledat$transmission_potential
+
+plot(growth ~ transmission_potential, data=exampledat, xlab="Pathogen Load",
+     ylab="Growth Rate")
+points(exampledat[exampledat$time==0,]$transmission_potential,
+       exampledat[exampledat$time==0,]$growth, col="purple4", cex=10)
+points(exampledat[exampledat$time==.3,]$transmission_potential,
+       exampledat[exampledat$time==.3,]$growth, col="purple",
+       cex=10)
+points(exampledat[exampledat$time==.32,]$transmission_potential,
+       exampledat[exampledat$time==.32,]$growth, col="mediumblue",
+       cex=10)
+points(exampledat[exampledat$time==.335,]$transmission_potential,
+       exampledat[exampledat$time==.335,]$growth, col="lightblue",
+       cex=10)
+abline(h=0, lty=2)
+```
+
+
+On 7/1/2023, I added a third compartment to the model to represent symptoms, which depend on the immune cell recruitment rate. In this model, pe-symptomatic
+transmission correlates positively with replication rate, replicating the trend
+we found in the norovirus study. 
+```{r}
+transmission.model.cap <- function(t, x, params) {
+  P <- x[1]
+  X <- x[2]
+
+  with(
+    as.list(params),
+    {
+      dP <- r*P*(1 - P/(5*10^5)) - k*X*P
+      dX <- a - d*X + y*k*X*P
+    
+      res <- c(dP, dX)
+      list(res)
+    }
+  ) 
+}
+
+r_variable <- seq(10, 250, by=10)
+# Dynamically, varyingr is a list.
+varyingr <- data.frame(k= 7, r=r_variable, dose=10^5)
+varyingr <- do.call(rbind, mapply(desolve_function, tstep, 
+                                  varyingr$k, varyingr$r, 
+                                  varyingr$dose, 
+                                  MoreArgs=list(model=transmission.model.cap),
+                                  SIMPLIFY = FALSE))
+write.csv(varyingr, "Varying r modified model.csv")
+varyingr <- read.csv("Varying r modified model.csv")
+
+delays.byr.lowsympthresh <- get.delay.peakload.symponset(
+  varyingr, r_variable, 1, "r")
+delays.byr.medsympthresh <- get.delay.peakload.symponset(
+  varyingr, r_variable, 2, "r")
+delays.byr.highsympthresh <- get.delay.peakload.symponset(
+  varyingr, r_variable, 3, "r")
+
+write.csv(delays.byr.lowsympthresh, "Delays by r low symp thresh modified.csv")
+write.csv(delays.byr.medsympthresh, "Delays by r med symp thresh modified.csv")
+write.csv(delays.byr.highsympthresh, "Delays by r high symp thresh modified.csv")
+
+delays.byr.lowsympthresh <- read.csv("Delays by r low symp thresh modified.csv")
+delays.byr.medsympthresh <- read.csv("Delays by r med symp thresh modified.csv")
+delays.byr.highsympthresh <- read.csv("Delays by r high symp thresh modified.csv")
+
+plot.varyingr <- function(delaysbyr1, delaysbyr2, delaysbyr3, size, ylow, yhigh,
+                          xlow, xhigh) {
+  cols <- colorRampPalette(c("deepskyblue", "deepskyblue4"))
+  cols <- cols(3)
+  ggplot(delaysbyr1, aes(x=r, y=delay.peakload.symponset, 
+                         color = as.character(symp.thresh))) + theme_classic() +
+  theme.ggplot(size) + theme(legend.position = c(0.8, 0.8)) + ylim(ylow, yhigh) + 
+    xlim(xlow, xhigh) +
+  geom_point(size=4) + 
+    geom_line() + geom_point(data=delaysbyr2, size=4) + 
+    geom_line(data=delaysbyr2) + geom_point(data=delaysbyr3, size=4) +
+    geom_line(data=delaysbyr3) +
+  geom_hline(yintercept=0, linetype="dashed", color="black", lwd=1)+
+    geom_point(aes(x=40, 
+                   y=delaysbyr1
+                   [r==40, "delay.peakload.symponset"]), 
+               color="red", size=4) + 
+    geom_point(aes(x=40, 
+                   y=delaysbyr2
+                   [r==40, "delay.peakload.symponset"]), 
+               color="red", size=4) +
+    geom_point(aes(x=40, 
+                   y=delaysbyr3
+                   [r==40, "delay.peakload.symponset"]), 
+               color="red", size=4) +
+  geom_text(aes(x=310, y=-0.00045, label = "Pre-symptomatic"),
+                color="black", size=9) +
+  geom_text(aes(x=310, y=0.0005, label = "Post-symptomatic"),
+                color="black", size=9) +
+  xlab("Replication Rate (r)") + 
+  ylab("Delay Between Symptom Onset \n and Peak Pathogen Load") +
+  ggtitle(paste("Varying Replication Rate (r) and Symptom Threshold")) +
+  theme(strip.background = element_rect(fill="lightblue")) + scale_color_manual(name="Symptom Threshold", values = c("1"= cols[1], "2"= cols[2], "3"= cols[3]))
+}
+
+postscript(file="./Figures/Delays varying r MODIFIED MODEL.eps", 
+           paper="special", horizontal=FALSE, 
+           height=10, width=15)
+plot.varyingr(delays.byr.lowsympthresh, delays.byr.medsympthresh, 
+              delays.byr.highsympthresh, 30, -.006, .006, 0, 340)
+dev.off()
+```
+
+On 7/18/23, I'm looking at how pre-symptomatic transmission under this modified
+model varies with immune cell kill rate and infectious dose.
+
+``` {r}
+k_variable <- seq(1,20, by=1)
+varyingk <- data.frame(k=k_variable, r=40, dose=10^5)
+varyingk <- do.call(rbind, mapply(desolve_function, tstep, 
+                                  varyingk$k, varyingk$r, 
+                                  varyingk$dose, 
+                                  MoreArgs=list(model=transmission.model.cap),
+                                  SIMPLIFY = FALSE))
+write.csv(varyingk, "Varying k modified.csv")
+delays.byk.lowsympthresh <- get.delay.peakload.symponset(varyingk, 
+                                                             k_variable, 
+                                                             1, 
+                                                             "k")
+delays.byk.medsympthresh <- get.delay.peakload.symponset(varyingk, 
+                                                             k_variable, 
+                                                             2, 
+                                                             "k")
+delays.byk.highsympthresh <- get.delay.peakload.symponset(varyingk, 
+                                                              k_variable, 
+                                                              3, 
+                                                              "k")
+write.csv(delays.byk.lowsympthresh, "Delays by k low symp thresh modified.csv")
+write.csv(delays.byk.medsympthresh, "Delays by k med symp thresh modified.csv")
+write.csv(delays.byk.highsympthresh, "Delays by k high symp thresh modified.csv")
+
+delays.byk.lowsympthresh <- read.csv("Delays by k low symp thresh modified.csv")
+delays.byk.medsympthresh <- read.csv("Delays by k med symp thresh modified.csv")
+delays.byk.highsympthresh <- read.csv("Delays by k high symp thresh modified.csv")
+
+plot.varyingk <- function(delaysbyk1, delaysbyk2, delaysbyk3, size) {
+  psize <- 4
+  cols <- colorRampPalette(c("tan1", "tan4"))
+  cols <- cols(3)
+  ggplot(delaysbyk1, aes(x=k, y=delay.peakload.symponset, 
+                         color = as.character(symp.thresh))) + 
+    theme_classic() + 
+  theme.ggplot(size) + theme(legend.position=c(0.8, 0.6)) + 
+  geom_point(size=psize) + geom_line() + geom_point(data=delaysbyk2, size=psize) + 
+    geom_line(data=delaysbyk2) + geom_point(data=delaysbyk3, size=psize) +
+    geom_line(data=delaysbyk3) +
+  geom_hline(yintercept=0, linetype="dashed", color="black", lwd=1)+
+    geom_point(aes(x=7, 
+                   y=delaysbyk1
+                   [k==7, "delay.peakload.symponset"]), 
+               color="red", size=4) +
+    geom_point(aes(x=7, 
+                   y=delaysbyk2
+                   [k==7, "delay.peakload.symponset"]), 
+               color="red", size=4) +
+    geom_point(aes(x=7, 
+                   y=delaysbyk3
+                   [k==7, "delay.peakload.symponset"]), 
+               color="red", size=4) +
+  geom_text(aes(x=25, y=-0.0008, label = "Pre-symptomatic"),
+                color="black", size=9) +
+  geom_text(aes(x=25, y=0.001, label = "Post-symptomatic"),
+                color="black", size=9) +
+  ylab("Delay Between Symptom Onset \n and Peak Pathogen Load") + 
+  scale_x_continuous(name="Kill Rate (k)", 
+                     breaks=seq(1, 20, by=6),
+                     limits=c(0, 28)) +
+  ggtitle(paste("Varying Kill Rate (k) and Symptom Threshold")) +
+  theme(strip.background = element_rect(fill="lightblue")) + scale_color_manual(name="Symptom Threshold", values = c("1"= cols[1], "2"= cols[2], "3"= cols[3]))
+}
+
+postscript(file="./Figures/Delays varying k MODIFIED MODEL.eps", 
+           paper="special", horizontal=FALSE, 
+           height=10, width=15)
+plot.varyingk(delays.byk.lowsympthresh, delays.byk.medsympthresh,
+              delays.byk.highsympthresh, 30)
+dev.off()
+
+dosevals <- 10^(seq(1, 10, by=1))
+varyingdose <- data.frame(k= 7, r= 40, dose=dosevals)
+varyingdose <- do.call(rbind, mapply(desolve_function, tstep, 
+                                  varyingdose$k, varyingdose$r, 
+                                  varyingdose$dose, 
+                                  MoreArgs=list(model=transmission.model.cap),
+                                  SIMPLIFY = FALSE))
+write.csv(varyingdose, "Varying Dose modified.csv")
+varyingdose <- read.csv("Varying Dose modified.csv")
+
+delays.bydose.lowsympthresh <- get.delay.peakload.symponset(
+  varyingdose, dosevals, 1, "dose")
+delays.bydose.medsympthresh <- get.delay.peakload.symponset(
+  varyingdose, dosevals, 2, "dose")
+delays.bydose.highsympthresh <- get.delay.peakload.symponset(
+  varyingdose, dosevals, 3, "dose")
+
+write.csv(delays.bydose.lowsympthresh, 
+          "Delays by dose low symp thresh modified.csv")
+write.csv(delays.bydose.medsympthresh, 
+          "Delays by dose med symp thresh modified.csv")
+write.csv(delays.bydose.highsympthresh, 
+          "Delays by dose high symp thresh modified.csv")
+
+delays.bydose.lowsympthresh <- read.csv("Delays by dose low symp thresh modified.csv")
+delays.bydose.medsympthresh <- read.csv("Delays by dose med symp thresh modified.csv")
+delays.bydose.highsympthresh <- read.csv("Delays by dose high symp thresh modified.csv")
+
+plot.varyingdose.delays <- function(delaysbydose.lowsympthresh, 
+                                    delaysbydose.medsympthresh, 
+                                    delaysbydose.highsympthresh, r,
+                                    size, paneled=FALSE,
+                                    hidetext=FALSE) {
+  psize <- 4
+  cols <- colorRampPalette(c("violet", "maroon"))
+  cols <- cols(3)
+  
+    unlabeled <- ggplot(delaysbydose.lowsympthresh, aes(x=dose, y=delay.peakload.symponset, color=as.character(symp.thresh))) + geom_point(size=psize) + 
+      geom_line() +
+    geom_point(data=delaysbydose.medsympthresh, size=psize) + 
+      geom_line(data=delaysbydose.medsympthresh) + 
+      theme_classic() +
+      theme.ggplot(size, 0.7) + theme(legend.position=c(0.8, 0.8)) +
+      geom_point(data=delaysbydose.highsympthresh, size=psize) + 
+      geom_line(data=delaysbydose.highsympthresh) + 
+      geom_hline(yintercept = 0, linetype="dashed") +
+      geom_point(aes(x=10^5, 
+                   y=delaysbydose.lowsympthresh
+                   [dose==10^5, "delay.peakload.symponset"]), 
+               color="red", size=psize) +
+      geom_point(aes(x=10^5, 
+                   y=delaysbydose.medsympthresh
+                   [dose==10^5, "delay.peakload.symponset"]), 
+               color="red", size=psize) +
+      geom_point(aes(x=10^5, 
+                   y=delaysbydose.highsympthresh
+                   [dose==10^5, "delay.peakload.symponset"]), 
+               color="red", size=psize) +
+    ggtitle(paste("Varying Infectious Dose and Symptom Threshold")) +
+  theme(strip.background = element_rect(fill="lightblue")) + scale_color_manual(name="Symptom Threshold", values = c("1"= cols[1], "2"= cols[2], "3"= cols[3])) +
+  scale_x_continuous(trans='log10', 
+                     breaks=c(10^2, 10^5, 10^8),
+                     labels=c(expression(10^2), 
+                              expression(10^5),
+                              expression(10^8)),
+                     limits=c(10, 10^13))
+    
+    if (!paneled) {10
+      labeled <- unlabeled + 
+      xlab("Infectious Dose") + 
+      ylab("Delay Between Symptom Onset \n and Peak Pathogen Load")
+      
+    } else {
+      labeled <- unlabeled + xlab("") + ylab("") +
+        geom_text(aes(x=10^7, y=.008), 
+                label = paste("Replication Rate: ", r),
+                color="black", size=8)
+    }
+    
+    if (!hidetext) {
+      labeled <- labeled + 
+        geom_text(aes(x=10^12, y=-0.0012, label = "Pre-symptomatic"),
+                color="black", size=9) +
+        geom_text(aes(x=10^12, y=0.0012, label = "Post-symptomatic"),
+                color="black", size=9) 
+    }
+  return(labeled)
+}
+
+postscript(file="./Figures/Delays varying dose MODIFIED MODEL.eps", paper="special", horizontal=FALSE,
+           height=10, width=15)
+
+plot.varyingdose.delays(delays.bydose.lowsympthresh, 
+                        delays.bydose.medsympthresh, 
+                        delays.bydose.highsympthresh, 20,
+                        30, FALSE)
+dev.off()
+```
