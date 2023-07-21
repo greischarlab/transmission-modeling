@@ -1,0 +1,28 @@
+virus,virus type,participants,symptom.onset,symptom.dur,peak.vl.day,shed.onset,shed.dur
+Norwalk virus,digestive,16,1.73,1.82,3.64,2,32.91
+Norwalk virus,digestive,15,2.5,3.25,4.25,3,15.75
+Snow Mountain virus,digestive,9,2.25,2.75,4,2.75,9.25
+Influenza A/Wisconsin/2005 (H3N2),respiratory,39,2,NA,3,NA,NA
+Influenza A/Bethesda/MM1/H3N2,respiratory,41,0,5,NA,NA,2
+Influenza A/Wisconsin/67/2007,respiratory,17,1.5,4,2,3,NA
+RSV-A (Memphis 37),respiratory,20,3.5,6.5,5.4,4.6,NA
+H1N1 A/Brisbane/59/07,respiratory,12,NA,NA,NA,NA,2.9
+RSV-A (Memphis 37),respiratory,35,4,NA,6,3.1,7.4
+Influenza A/Texas/36/91,respiratory,19,1,6,2,NA,NA
+Influenza A/Texas/36/91,respiratory,14,2,5,2,1.5,NA
+Influenza A/Texas/36/91,respiratory,18,NA,NA,NA,NA,3.2
+Influenza B/Yamagata/16/88,respiratory,19,NA,NA,NA,NA,3.2
+Influenza A/Victoria/3/75,respiratory,15,2.5,NA,4,2.5,3.5
+Influenza A/Texas/1/85,respiratory,20,NA,NA,NA,NA,4.2
+Influenza A/Texas/36/91,respiratory,14,2,NA,2,NA,5.1
+Influenza B/Yamagata/16/88,respiratory,29,NA,0.479166667,NA,NA,4
+Influenza A/Texas/36/91,respiratory,8,1,6,2,NA,4.6
+Influenza A/Texas/36/91,respiratory,8,1,4,2,NA,NA
+Norwalk virus,digestive,41,1.366666667,1.508333333,NA,NA,1.258333333
+Rhinovirus,respiratory,17,1,NA,2,NA,4.6
+Rhinovirus,respiratory,14,1.5,3.5,4,1.9,6
+Rhinovirus,respiratory,13,3,NA,NA,NA,4.3
+Rhinovirus,respiratory,16,NA,NA,NA,NA,1.7
+Rhinovirus,respiratory,15,NA,NA,NA,NA,3.7
+Rhinovirus,respiratory,11,NA,NA,NA,NA,3.7
+Influenza A/Wisconsin/67/2005 (H3N2),respiratory,22,NA,3.5375,NA,NA,3.7
