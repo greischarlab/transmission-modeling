@@ -1,0 +1,129 @@
+---
+title: "CHI Trial Meta-Analysis"
+author: "Kayla Zhang"
+date: "2024-02-17"
+output: word_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Here we combine shedding and symptom timing data from the CHI trials we 
+collected into one plot.
+
+```{r}
+plot.segment <- function(xstart, xlength, dotted, col, 
+                         ypos, isindividual) {
+  
+  if (dotted) {
+    lty <- 2
+  } else {
+    lty <- 1
+  }
+  
+  if(is.na(xstart)) {
+    start <- 0
+    text(start, ypos, labels="?", cex=0.75, col=col)
+  } else {
+    start <- xstart
+  }
+  
+  if(is.na(xlength)) {
+    length <- 2
+    text(start + length, ypos, labels="?", cex=0.75, col=col)
+  } else {
+    length <- xlength
+  }
+  
+  if (isindividual) {
+    if (!dotted) {
+      points(start + length + 5, ypos, pch=8)
+    }
+  }
+  
+  segments(start + 0.5, ypos, start + length - 0.5, ypos, lty=lty, 
+           col=col)
+}
+
+plot.pane <- function(dat, axis.labels) {
+  
+  plot(0, 0, xlim=c(0, 40), ylim=c(0, nrow(rightpane) * 4), col = "white", 
+       xlab= "", ylab='', yaxt='n', mgp=c(0, 0.8, 0), tck=-0.04)
+  
+  axis.ystart <- 0
+  
+  for (v in 1:length(unique(dat$virus))) {
+    currvirusdat <- dat[dat$virus==unique(dat$virus)[v],]
+    numrows <- nrow(currvirusdat)
+    currviruscol <- cols.df[cols.df$virus == currvirusdat$virus[1],]$col
+    
+    for (i in 1:nrow(currvirusdat)) {
+      row <- currvirusdat[i,]
+    
+      plot.segment(xstart=row$shed.onset, 
+                   xlength=row$shed.dur, 
+                   dotted=FALSE, 
+                   col=currviruscol, 
+                   ypos=axis.ystart+i*4-2.25,
+                   isindividual= row$study=='Atmar2008')
+      
+      plot.segment(xstart=row$symptom.onset, 
+                   xlength=row$symptom.dur, 
+                   dotted=TRUE, 
+                   col=currviruscol, 
+                   ypos=axis.ystart+i*4 - 0.5,
+                   isindividual= row$study=='Atmar2008')
+    }
+    
+      axis.yend <- axis.ystart + numrows * 4
+
+      axis(2, at=seq(axis.ystart, axis.yend, by=4), col=currviruscol, lwd.ticks=0, 
+           labels=axis.labels[[v]], las=2, col.axis=currviruscol)
+      axis.ystart <- axis.yend + 2
+  }
+}
+
+data <- read.csv('ViralCHIStudies.csv')
+
+data <- data[order(data$virus),]
+
+leftpane <- data[data$virus != 'Influenza A',]
+rightpane <- data[data$virus == "Influenza A",]
+cols.df <- data.frame(virus = unique(data$virus), 
+                      col = c("#401594",
+                              "#009E73", 
+                              "#D55E00",
+                              "#56B4E9",
+                              "#CC79A7",
+                              "#E69F00"))
+
+labels.left <- list(c("", "Influenza B", ""), 
+            c("", "", "", "Norovirus", "", ""),
+            c("", "", "Rhinovirus", "", ""),
+            c("", "", "RSV", ""),
+            c("", "SARS-CoV-2"))
+
+labels.right <- list(c("", "", "", "", "", "", "", "", "",
+                  "Influenza A", "", "", "", "", "", "", "", "", ""))
+
+{
+  tiff(filename="Complete Shedding Vs. Symptom.tiff", 
+           height=7.5, width=6.5, units="in", res=500)
+
+  par(bty='n', mfrow=c(1, 2), oma=c(0.1, 2, 0,0), mai=c(1.02, 0.82, 0, 0.42), xpd=TRUE)
+  
+  plot.pane(leftpane, labels.left)
+  mtext('Days post-inoculation', side=1, line=-3, outer=TRUE,
+        adj=0.55)
+  plot.pane(rightpane, labels.right)
+  legend(10, 7, legend=c("Symptoms", "Shedding", "No data", 
+                          "Individual-level data"), 
+         lty=c(2, 1, NA, NA), 
+         pch=c(NA, NA, NA, 8), bty='n', cex=0.8)
+  
+  dev.off()
+}
+```

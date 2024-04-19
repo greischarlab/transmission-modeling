@@ -1,0 +1,519 @@
+---
+title: "Mechanistic Model Usage"
+author: "Kayla Zhang"
+date: "2024-02-11"
+output: word_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Our packages for ODE model and plotting:
+
+```{r}
+require(deSolve)
+require(ggplot2)
+require(gridExtra)
+library(grid)
+require(dplyr)
+```
+
+Here, we have our ODE model, based on King *et al*., 2009,  as well as a 
+modified model implementing a pathogen carrying capacity.
+```{r}
+transmission.model <- function(t, x, params) {
+  P <- x[1]
+  X <- x[2]
+
+  with(
+    as.list(params),
+    {
+      dP <- r*P - k*X*P
+      dX <- a - d*X + y*k*X*P
+    
+      res <- c(dP, dX)
+      list(res)
+    }
+  ) 
+}
+
+transmission.model.cap <- function(t, x, params) {
+  P <- x[1]
+  X <- x[2]
+
+  with(
+    as.list(params),
+    {
+      dP <- r*P*(1 - P/(5*10^5)) - k*X*P
+      dX <- a - d*X + y*k*X*P
+    
+      res <- c(dP, dX)
+      list(res)
+    }
+  ) 
+}
+```
+
+We define below some useful functions for defining parameters and creating 
+dataframes containing the simulated data from our model. We focus on varying 
+pathogen replication rate and immune cell kill rate of the pathogen in the
+present study, so we maintain constant values for the remaining parameters
+based on values used in King *et al*., 2009. We truncate the 
+dataframes when pathogen load reaches 0, assuming pathogen clearance. 
+
+```{r}
+get.params <- function(k, r) {
+  return(c(y=10^-4, k=k, r=r, a=1, d=.5))
+}
+
+desolve_function <- function(tstep, k, r, model, id) {
+  time <- seq(0,2, by=tstep)
+  params <- get.params(k, r)
+
+  df <- data.frame(lsoda(c(P=id, X=0), time, model, 
+                       params))
+  
+  if(any(df$P <= 0)){
+    clearance <- min(which(df$P <= 0))
+    df[clearance:length(time),] <- NA
+  }
+  
+  df <- data.frame(time=time, 
+                  pathogen=df$P, 
+                  immune=df$X, 
+                  k=k, r=r, dose=id)
+  
+  return(df)
+}
+
+```
+
+Here we provide functions for calculating time of peak pathogen load and 
+symptom onset as well as the delay between them. These values are needed to 
+determine whether pre-symptomatic transmission has occurred. If time of peak 
+pathogen load comes before time of symptom onset, meaning the calculated delay
+is negative, then we have pre-symptomatic transmission. We also include 
+a function for creating dataframes that house different values of a chosen
+parameter and the corresponding delays between symptom onset and peak pathogen
+load, allowing us to assess the correlation between that parameter and 
+pre-symptomatic transmission.
+
+```{r}
+peak.pathogenloadtime <- function(df) {
+  peak.pl <- max(df$pathogen, na.rm=TRUE)
+  return(df[which(df$pathogen==peak.pl),]$time)
+}
+
+symptom.onset <- function(df, s.compartment, thresh) {
+  symptomatic <- df[which(df[s.compartment] >= thresh),]$time
+  if(length(symptomatic) > 0) {
+    return(min(symptomatic))
+  } else {
+    return(NA)
+  }
+}
+
+symptom.end <- function(df, s.compartment, thresh) {
+  symptomatic <- df[which(df[s.compartment] >= thresh),]$time
+  if(length(symptomatic) > 0) {
+    return(max(symptomatic))
+  } else {
+    return(NA)
+  }
+}
+
+delay.calculation <- function(df, symp.thresh) {
+  return(peak.pathogenloadtime(df) - symptom.onset(df, 'immune', symp.thresh))
+}
+
+```
+
+The first model we examine is one in which symptom onset and duration is 
+dependent only on pathogen load. This is represented by a dotted horizontal red 
+line depicting the threshold for symptoms. We are defining pre-symptomatic 
+transmission as reaching peak pathogen load before symptom onset. This is a 
+conservative method of estimating pre-symptomatic transmission. 
+
+Given this definition, there are two potential outcomes: 1) symptoms 
+threshold is below peak pathogen load, signifying post-symptomatic transmission, 
+and 2) symptoms threshold is above peak pathogen load, signifying 
+asymptomatic infection. The outlier case (symptoms threshold is at peak pathogen 
+load) is ignored. 
+
+The second model we examine is one in which symptom onset and duration is 
+dependent only on immune response. When immune response rises above a certain 
+threshold, the patient is symptomatic.
+
+We produce simulations of these two models to demonstrate their dynamics.
+```{r}
+plot.model.simulations <- function(symp.thresh, data, 
+                                    cex, label,
+                                    xlimlow, xlimhigh, s.compartment) {
+  
+  col <- 'red'
+  
+  time <- data$time
+  path.load <- data$pathogen
+  immune <- data$immune
+  peak.load.time <- peak.pathogenloadtime(data)
+  
+  if (s.compartment == 'pathogen') {
+    plot(time, path.load, col=col, xlab="", ylab="", xlim=c(xlimlow, xlimhigh), log='y',
+         ylim=10^c(-1, 7), cex.lab=cex, cex.axis=cex, mgp=c(0, 1, 0), 
+         yaxt='n', tck=-0.04, type="l", lwd=3, bty='l')
+    lines(time, immune, col=gray(0.25), type="l", lty=2)
+    points(peak.load.time, path.load[which(time==peak.load.time,)],
+         cex=1.5, pch=16, col="red")
+    points(peak.load.time, immune[which(time==peak.load.time,)],
+         col=gray(0.25), cex=1.5, pch = 21, bg = "white")
+    axis(2, cex.axis=cex, at=10^(seq(-1, 7, by=2)), 
+     labels=c(expression(10^-1), 
+              expression(10^1),
+              expression(10^3),
+              expression(10^5),
+              expression(10^7)), las=2, mgp=c(0, 1, 0))
+  } else {
+    plot(time, immune, col=col, xlab="", ylab="", xlim=c(xlimlow, xlimhigh), log='y',
+         ylim=10^c(-1,7), cex.lab=cex, cex.axis=cex, mgp=c(0, 1, 0), 
+         yaxt='n', lty = 2, tck = -0.04, type="l", lwd=3, bty='l')
+    lines(time, path.load, col=gray(0.25), type="l")
+    points(peak.load.time, immune[which(time==peak.load.time,)],
+         cex=1.5, pch = 21, col = "red", bg = "white")
+    points(peak.load.time, path.load[which(time==peak.load.time,)],
+         col=gray(0.25), pch=16, cex=1.5)
+    axis(2, cex.axis=cex, at=10^(seq(-1, 7, by=2)), 
+     labels=c(expression(10^-1), 
+              expression(10^1),
+              expression(10^3),
+              expression(10^5),
+              expression(10^7)), las=2, mgp=c(0, 1, 0))
+  }
+  
+  abline(h=symp.thresh, lty=3, col=col, lwd=2)
+  
+  polygon(x=c(symptom.onset(data, 
+                            s.compartment,
+                            symp.thresh), 
+              symptom.onset(data, 
+                            s.compartment,
+                            symp.thresh),
+              symptom.end(data,
+                          s.compartment,
+                          symp.thresh),
+              symptom.end(data,
+                          s.compartment,
+                          symp.thresh)), 
+          y=10^c(-5, 10, 10, -5), 
+          col=rgb(200, 200, 200, alpha=100,
+                  maxColorValue=255),
+          border = NA)
+  
+  text(0.01 * (xlimhigh - xlimlow) + xlimlow, 10^(.85 * (8)) + 10^-1, 
+       labels=label, cex=cex, adj=0)
+}
+
+data.lowreplication.nocap <- desolve_function(tstep=10^-4, 
+                            k=3.5, r=30, model=transmission.model, id=10^4)
+data.highreplication.nocap <- desolve_function(tstep=10^-4, 
+                             k=3.5, r=200, model=transmission.model, id=10^4) 
+
+data.lowreplication.cap <- desolve_function(tstep=10^-4, 
+                            k=3.5, r=30, model=transmission.model.cap, id=10^4)
+data.highreplication.cap <- desolve_function(tstep=10^-4, 
+                             k=3.5, r=200, model=transmission.model.cap, id=10^4) 
+
+path.symp.thresh <- 10^6
+immune.sympthresh <- 10
+immune.pathcap.sympthresh <- 2
+cex <- 1.25
+cex_labels <- 0.9
+
+{
+  tiff(filename="Model Schematics.tiff", height=7.5, width=6.5,
+      units="in", res=500)
+  
+  par(mfrow=c(3, 2), oma=c(0, 2.5, 1.75, 0), mai=c(0.52, 0.32, 0.32, 0.42))
+    
+  plot.model.simulations(symp.thresh = path.symp.thresh,
+                         data = data.lowreplication.nocap, 
+                         cex = cex, 
+                         label = "Asymptomatic", 
+                         xlimlow = 0, xlimhigh = 0.3, 
+                         s.compartment = 'pathogen')
+  
+  legend(-0.01, 10^4.2, legend=c('Peak pathogen load', 
+                             'No symp/symp',
+                             'Symptom threshold',
+                             'Immune effector', 
+                             'Pathogen'
+                           ), 
+         lty=c(NA, NA, 3, 2, 1), pch=c(16, NA, NA, NA, NA), bty="n",
+         xpd=TRUE, cex=0.9)
+  
+  mtext(text="SLOW REPLICATION", font=2, side=3, line=2.5, cex=cex_labels)
+  
+  mtext(text="A. Pathogen abundance symptom threshold", side=3, line=1, 
+        cex=cex_labels, adj=0.4)
+  
+  plot.model.simulations(symp.thresh = path.symp.thresh, 
+                         data = data.highreplication.nocap, 
+                         cex = cex, 
+                         label = "Post-symptomatic", 
+                         xlimlow = 0, xlimhigh = 0.05, 
+                         s.compartment = 'pathogen')
+  
+  mtext(text="FAST REPLICATION", font=2, side=3, line=2.5, cex=cex_labels)
+  
+  plot.model.simulations(symp.thresh = immune.sympthresh, 
+                         data = data.lowreplication.nocap, 
+                         cex = cex, 
+                         label = "Pre-symptomatic", 
+                         xlimlow = 0, xlimhigh = 0.3, 
+                         s.compartment = 'immune')
+  
+  mtext(text="B. Immune effector abundance symptom threshold, no pathogen carrying capacity", 
+        side=3, line=1, cex=cex_labels, adj=0.1)
+  
+  plot.model.simulations(symp.thresh = immune.sympthresh, 
+                         data = data.highreplication.nocap, 
+                         cex = cex, 
+                         label = "Post-symptomatic", 
+                         xlimlow = 0, xlimhigh = 0.05, 
+                         s.compartment = 'immune')
+  
+  plot.model.simulations(symp.thresh = immune.pathcap.sympthresh, 
+                         data = data.lowreplication.cap, 
+                         cex = cex, 
+                         label = "Post-symptomatic",
+                         xlimlow = 0, xlimhigh = 0.3, 
+                         s.compartment = 'immune')
+  
+  mtext(text="C. Immune effector abundance symptom threshold, pathogen carrying capacity", 
+        side=3, line=1, cex=cex_labels, adj=0.105)
+  
+  plot.model.simulations(symp.thresh = immune.pathcap.sympthresh, 
+                         data = data.highreplication.cap, 
+                         cex = cex, 
+                         label = "Pre-symptomatic", 
+                         xlimlow = 0, xlimhigh = 0.12, 
+                         s.compartment = 'immune')
+  
+  mtext("Time", side=1, line=-1.75, outer=TRUE, adj=0.5)
+  mtext("Abundance", side=2, line=1, outer=TRUE)
+     
+  dev.off()
+}
+```
+
+Now, we vary pathogen replication rate (r) and plot the delay between
+symptom onset and peak pathogen load against various r values for both 
+transmission models (with and without pathogen load cap) to
+investigate the correlation between replication rate and
+pre-symptomatic transmission. 
+```{r}
+get.delays.df <- function(data, param.vals, symp.thresh, var_name) {
+  delays.df <- data.frame(placeholder_name=integer(), 
+                          delay.symponset.peakload=integer())
+  
+  names(delays.df)[names(delays.df) == "placeholder_name"] <- var_name
+  
+  for (v in param.vals) {
+    df <- data[data[var_name]==v,]
+    delay.symponset.peakload <- delay.calculation(df, symp.thresh)
+    dftoadd <- data.frame(v, delay.symponset.peakload)
+    names(dftoadd)= c(var_name, "delay.symponset.peakload")
+    delays.df <- rbind(delays.df, dftoadd)
+  }
+  
+  delays.df$symp.thresh = symp.thresh
+  
+  return(delays.df)
+}
+
+r_vals <- seq(10, 250, by=10)
+
+varyingr.nocap <- data.frame(k= 3.5, r=r_vals, dose=10^5)
+varyingr.nocap <- do.call(rbind, mapply(desolve_function, 
+                                  tstep=10^-4, 
+                                  k=varyingr.nocap$k, 
+                                  r=varyingr.nocap$r, 
+                                  id=varyingr.nocap$dose,                                  
+                                  MoreArgs=list(model=transmission.model),
+                                  SIMPLIFY = FALSE))
+
+varyingr.cap <- data.frame(k= 7, r=r_vals, dose=10^5)
+varyingr.cap <- do.call(rbind, mapply(desolve_function, 
+                                  tstep=10^-4, 
+                                  k=varyingr.cap$k, 
+                                  r=varyingr.cap$r, 
+                                  id=varyingr.cap$dose,                                  
+                                  MoreArgs=list(model=transmission.model.cap),
+                                  SIMPLIFY = FALSE))
+
+delays.byr.lowsympthresh.nocap <- get.delays.df(data=varyingr.nocap, 
+                                          param.vals=r_vals,
+                                          symp.thresh=5, 
+                                          var_name="r")
+
+delays.byr.medsympthresh.nocap <- get.delays.df(data=varyingr.nocap, 
+                                          param.vals=r_vals,
+                                          symp.thresh=10, 
+                                          var_name="r")
+
+delays.byr.highsympthresh.nocap <- get.delays.df(data=varyingr.nocap, 
+                                          param.vals=r_vals,
+                                          symp.thresh=15, 
+                                          var_name="r")
+
+delays.byr.lowsympthresh.cap <- get.delays.df(data=varyingr.cap, 
+                                          param.vals=r_vals,
+                                          symp.thresh=1, 
+                                          var_name="r")
+
+delays.byr.medsympthresh.cap <- get.delays.df(data=varyingr.cap, 
+                                          param.vals=r_vals,
+                                          symp.thresh=2, 
+                                          var_name="r")
+
+delays.byr.highsympthresh.cap <- get.delays.df(data=varyingr.cap, 
+                                          param.vals=r_vals,
+                                          symp.thresh=3, 
+                                          var_name="r")
+
+plot.varyingr <- function(delaysbyr1, delaysbyr2, delaysbyr3, size, ylow, yhigh,
+                          xlow, xhigh) {
+  highlighted_points <- delaysbyr2[delaysbyr2$r==30 | delaysbyr2$r==200,]
+  
+  return(ggplot(delaysbyr1, aes(x=r, y=delay.symponset.peakload, 
+                         color = as.character(symp.thresh))) + theme_classic() +
+    theme(
+          plot.title = element_text(hjust = 0.5, vjust = 3, size=size,
+                                    face="bold"), 
+          plot.margin = unit(c(0.05, 0, 0, -0.05),"in"),
+          axis.title.y = element_text(margin = margin(r=4), size=size),
+          axis.title.x = element_text(margin = margin(t=8), size=size),
+          axis.text.x = element_text(size=size, margin = margin(t=2)),
+          axis.text.y = element_text(size=size, margin = margin(r=2)),
+          axis.ticks.length=unit(0.05, "in"),
+          legend.key.size = unit(0.001, "in"),
+          legend.text = element_text(size=size * .9),
+          legend.title = element_text(size=size * .9),
+          legend.position = c(0.85, 0.25)) +
+      ylim(ylow, yhigh) + 
+    xlim(xlow, xhigh) +
+  geom_point(size=1) + 
+    geom_line() + geom_point(data=delaysbyr2, size=1) + 
+    geom_line(data=delaysbyr2) + geom_point(data=delaysbyr3, size=1) +
+    geom_line(data=delaysbyr3) +
+  geom_hline(yintercept=0, linetype="dashed", color="black") +
+    geom_point(data=highlighted_points, aes(x=r, y=delay.symponset.peakload), color="red", size=1)) 
+}
+
+cols <- colorRampPalette(c("deepskyblue", "deepskyblue4"))
+cols <- cols(3)
+
+plot.varyingr.nocap <- plot.varyingr(delays.byr.lowsympthresh.nocap, 
+              delays.byr.medsympthresh.nocap, 
+              delays.byr.highsympthresh.nocap, 
+              size=6, 
+              ylow=-.02, 
+              yhigh=.005, 
+              xlow=0, 
+              xhigh=350) + 
+  ggtitle("A) No Carrying Capacity") + 
+  xlab("") +
+  ylab("") +
+  geom_text(aes(x=315, y=-0.0013, label = "Pre-symptomatic"),
+                color="black", size=2) +
+  geom_text(aes(x=315, y=0.0017, label = "Post-symptomatic"),
+                color="black", size=2) +
+  scale_color_manual(name="Symptom Threshold", values = c("5"= cols[1], 
+                                                          "10"= cols[2], 
+                                                          "15"= cols[3]),
+                     limits=c("5", "10", "15"))
+  
+
+plot.varyingr.cap <- plot.varyingr(delays.byr.lowsympthresh.cap,
+              delays.byr.medsympthresh.cap, 
+              delays.byr.highsympthresh.cap, 
+              size=6, 
+              ylow=-.006, 
+              yhigh=.006, 
+              xlow=0, 
+              xhigh=350) + 
+  ggtitle("B) Pathogen Load Carrying Capacity") +
+  xlab("Replication rate (r)") + 
+  ylab("") +
+  geom_text(aes(x=315, y=-0.00065, label = "Pre-symptomatic"),
+                color="black", size=2) +
+  geom_text(aes(x=315, y=0.0008, label = "Post-symptomatic"),
+                color="black", size=2) + 
+  scale_color_manual(name="Symptom Threshold", values = c("1"= cols[1], 
+                                                          "2"= cols[2], 
+                                                          "3"= cols[3])) +
+  theme(legend.position="none")
+
+tiff(file="Delays varying r.tiff",
+           height=3.5, width=3.5, units="in", res=500)
+grid.arrange(plot.varyingr.nocap, plot.varyingr.cap, nrow=2, 
+             left=textGrob("Delay between symptom onset \n and peak pathogen load",
+             gp = gpar(fontsize = 6),
+             rot=90))
+dev.off()
+```
+
+We show that for all replication rates used, immune response (X) peaks after 
+pathogen load (P).
+```{r}
+peak.immunetime <- function(df) {
+  peak.immune <- max(df$immune, na.rm=TRUE)
+  return(df[which(df$immune==peak.immune),]$time)
+}
+
+get.peaktimes.df <- function(data) {
+  peaktimes.df <- data.frame()
+  
+  for (r in r_vals) {
+    df <- data[data$r==r,]
+    pathogen.peaktime <- peak.pathogenloadtime(df)
+    immune.peaktime <- peak.immunetime(df)
+    dftoadd <- data.frame(r, pathogen.peaktime, immune.peaktime)
+    peaktimes.df <- rbind(peaktimes.df, dftoadd)
+  }
+  
+  return(peaktimes.df)
+}
+
+peaktimes.cap <- get.peaktimes.df(varyingr.cap)
+peaktimes.nocap <- get.peaktimes.df(varyingr.nocap)
+
+{
+  tiff(filename="Pathogen and immune peak times.tiff", height=3.5, width=6.5,
+      units="in", res=500)
+  
+  par(mfrow=c(1, 2), mai=c(0.82, 0.72, 0.52, 0.06))
+  
+  plot(pathogen.peaktime ~ r, data=peaktimes.cap, ylim=c(0, 0.15), type="l",
+       xlab="", ylab="Time of max abundance", bty="l", mgp=c(2.25, 0.75, 0))
+  lines(immune.peaktime ~ r, data=peaktimes.cap, col="red")
+  
+  mtext("Exponential growth", side=3, line=1.5)
+  
+  mtext("Replication rate (r)", side=1, line=2.5, adj=2)
+  
+  plot(pathogen.peaktime ~ r, data=peaktimes.nocap, ylim=c(0, 0.15), type="l",
+       xlab="", ylab="", bty="l")
+  lines(immune.peaktime ~ r, data=peaktimes.nocap, col="red")
+  
+  mtext("Pathogen carrying capacity", side=3, line=1.5)
+  
+  legend(50, 0.11, legend=c('Immune effector',
+                             'Pathogen'), 
+         lty=c(2, 1), col=c("red", "black"), bty="n")
+  
+  dev.off()
+}
+```
