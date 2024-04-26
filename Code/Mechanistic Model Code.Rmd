@@ -494,19 +494,23 @@ peaktimes.nocap <- get.peaktimes.df(varyingr.nocap)
   tiff(filename="Pathogen and immune peak times.tiff", height=3.5, width=6.5,
       units="in", res=500)
   
-  par(mfrow=c(1, 2), mai=c(0.82, 0.72, 0.52, 0.06))
+  par(mfrow=c(1, 2), mai=c(0.82, 0.72, 0.52, 0.06), oma=c(0, 1, 0, 0))
   
   plot(pathogen.peaktime ~ r, data=peaktimes.cap, ylim=c(0, 0.15), type="l",
-       xlab="", ylab="Time of max abundance", bty="l", mgp=c(2.25, 0.75, 0))
-  lines(immune.peaktime ~ r, data=peaktimes.cap, col="red")
+       xlab="", ylab="", yaxt="n", bty="l", 
+       mgp=c(2.25, 0.75, 0))
+  axis(2, las=2)
+  mtext("Time of max abundance", 2, line=3)
+  lines(immune.peaktime ~ r, data=peaktimes.cap, col="red", lty=2)
   
   mtext("Exponential growth", side=3, line=1.5)
   
   mtext("Replication rate (r)", side=1, line=2.5, adj=2)
   
   plot(pathogen.peaktime ~ r, data=peaktimes.nocap, ylim=c(0, 0.15), type="l",
-       xlab="", ylab="", bty="l")
-  lines(immune.peaktime ~ r, data=peaktimes.nocap, col="red")
+       xlab="", ylab="", yaxt="n", bty="l")
+  axis(2, las=2)
+  lines(immune.peaktime ~ r, data=peaktimes.nocap, col="red", lty=2)
   
   mtext("Pathogen carrying capacity", side=3, line=1.5)
   

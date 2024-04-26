@@ -2,9 +2,10 @@
 title: "Analyzing Data From Atmar 2008"
 author: "Kayla Zhang"
 date: "2024-02-18"
-output: word_document
-editor_options: 
-  chunk_output_type: console
+output:
+  bookdown::pdf_document2:
+    toc: no
+    fig_caption: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -22,10 +23,15 @@ atmardata <- rbind(atmardata$scatterplot$atmarplotc.jpg,
                          atmardata$scatterplot$atmarplote.jpg))
 ```
 
-We then fit a statistical model (Li & Handel, 2014) that estimates viral load 
-values over time to the shedding data we just extracted using the least squares
-method. We make the assumption that viral load is a 1-to-1 mapping to viral 
-shedding.
+We then fit a statistical model (Li & Handel, 2014, Holder & Beauchemin, 2011) 
+that estimates viral load values over time to the shedding data we just 
+extracted using the least squares method. There is a typo in 
+Li & Handel, 2014--in the denominator, they have mistakenly written the term 
+exp(p4 * (t-p3)) as exp(-p4 * (t-p3)). We make the assumption that viral load is 
+a 1-to-1 mapping to viral shedding. We also subtract 19 hours each time we 
+convert from days to hours to set time point = 0 as time of inoculation,
+since Atmar et al., 2008 defined study day 1 as beginning around 5-6 hours after 
+inoculation.
 ```{r}
 generate.estimates <- function(t, pars) {
   
@@ -170,7 +176,8 @@ params.backtoinitial <- make.param.df(atmardata, maxt.backtoinitial)
 Now we plot the trajectories of three participants (703, 722, 724) as an example.
 ```{r}
 plot.viralload <- function(data, pars, sympdata, max.modeltime, yhigh, cex,
-                           cex_labels, xlabel, ylabel, example, letter = "") {
+                           xaxisLabs = T, yaxisLabs = T, 
+                           cex_labels, xlabel, ylabel, example) {
   
     
   if(unique(participantdata$dose) == '4800') {
@@ -216,39 +223,44 @@ plot.viralload <- function(data, pars, sympdata, max.modeltime, yhigh, cex,
   }
   
   if (!example) {
-    title <- paste(letter, ") Participant ", unique(data$participant),
-                   ":\n", symp.timing, sep="")
+    title <- paste("ID:", unique(data$participant))
   }
   
   points(t.peak, max(predictedvl), pch=redpointstyle, 
          col="red", lwd=cex, cex=cex+0.5)
   
-  axis(1, cex.axis=cex, at=seq(0, 400, by=100), labels = c(expression(0),
-                                                          expression(100),
-                                                          expression(200),
-                                                          expression(300),
-                                                          expression(400)),
+  xLabs = NA
+  if(xaxisLabs==T){
+        xLabs = c(expression(0),
+                  expression(100),
+                  expression(200),
+                  expression(300),
+                  expression(400))}
+  axis(1, cex.axis=cex+0.25, at=seq(0, 400, by=100), labels = xLabs,
        line=1.25,
-       mgp=c(2, 1, 0), tck=-0.04)
+       mgp=c(2, 0.75, 0), tck=-0.04)
   
-  axis(2, cex.axis=cex, at=seq(7, 14, by=1), 
-       labels=c(expression(10^7),
+  yLabs = NA
+  if(yaxisLabs==T){
+      yLabs = c(expression(10^7),
                 expression(10^8),
                 expression(10^9),
                 expression(10^10),
                 expression(10^11),
                 expression(10^12),
                 expression(10^13),
-                expression(10^14)),
+                expression(10^14))}
+  axis(2, cex.axis=cex, at=seq(7, 14, by=1), 
+       labels=yLabs,
        line=1.25,
        las=2, 
        mgp=c(2, 1, 0), tck= -0.04)
 
-  mtext(text=title, side=3, line=2, cex=cex_labels, font=2)
+  text(x=300, y=13, labels=title, font=2)
 
-  mtext(text=ylabel, side=2, line=6, cex=cex_labels)
+  mtext(text=ylabel, side=2, line=4.5, cex=cex_labels)
   
-  mtext(text=xlabel, side=1, line=4.5, cex=cex_labels)
+  mtext(text=xlabel, side=1, line=3.5, cex=cex_labels)
   
 }
 
@@ -297,9 +309,10 @@ local minimum in pathogen load as the endpoint going forward.
 ```{r}
 participants.by.dose <- unique(atmardata$participant[order(atmardata$dose)])
 
-tiff(filename="Participant Trajectories.tiff", height=19, width=9.5,
+tiff(filename="Participant Trajectories.tiff", height=7.5, width=6.5,
     units="in", res=500)
-par(mfrow=c(6, 3), mai=c(1, 1, 0.82, 0.5), oma=c(2, 3, 0, 3))
+par(mfrow=c(6, 3), mai=c(0.22, 0.42, 0.22, 0.22), oma=c(3.5, 4, 0, 0),
+    mar=c(1, 2.1, 1, 1))
 
 for(i in 1:length(participants.by.dose)) {
   
@@ -309,23 +322,64 @@ for(i in 1:length(participants.by.dose)) {
   params <- unlist(params.localmin[params.localmin$participant==p,][2:5])
   dose <- unique(participantdata$dose)
   
-  plot.viralload(
+  if (i %in% c(1, 4, 7, 10, 13)) {
+    plot.viralload(
+      data=participantdata, 
+      pars=params, 
+      sympdata=sympdata, 
+      max.modeltime=maxt.firstmin[maxt.firstmin$participant==p,]$max.point,
+      yhigh=14,
+      cex=1,
+      xaxisLabs=F,
+      cex_labels=0.8,
+      xlabel="",
+      ylabel="Viral shedding",
+      example=FALSE)
+  } else if (i %in% c(14, 15)) {
+     plot.viralload(
+      data=participantdata, 
+      pars=params, 
+      sympdata=sympdata, 
+      max.modeltime=maxt.firstmin[maxt.firstmin$participant==p,]$max.point,
+      yhigh=14,
+      cex=1,
+      yaxisLabs=F,
+      cex_labels=0.8,
+      xlabel="Hours after inoculation",
+      ylabel="",
+      example=FALSE) 
+  } else if (i==16) {
+    plot.viralload(
+      data=participantdata, 
+      pars=params, 
+      sympdata=sympdata, 
+      max.modeltime=maxt.firstmin[maxt.firstmin$participant==p,]$max.point,
+      yhigh=14,
+      cex=1,
+      cex_labels=0.8,
+      xlabel="Hours after inoculation",
+      ylabel="Viral shedding",
+      example=FALSE)
+  } else {
+    plot.viralload(
     data=participantdata, 
     pars=params, 
     sympdata=sympdata, 
     max.modeltime=maxt.firstmin[maxt.firstmin$participant==p,]$max.point,
     yhigh=14,
-    cex=1.5,
-    cex_labels=1.25,
-    xlabel="Hours after inoculation",
-    ylabel="Viral shedding",
-    example=FALSE,
-    letter=toupper(letters)[i])
+    cex=1,
+    xaxisLabs=F,
+    yaxisLabs=F,
+    cex_labels=0.8,
+    xlabel="",
+    ylabel="",
+    example=FALSE)
+  }
 }
 
 par(mar=c(0, 0, 0, 0))
 plot.new()
-legend(x = "center",
+legend(x = "bottom",
        legend = c("4800 RT-PCR Units",
                   "48 RT-PCR Units",
                   "4.8 RT-PCR Units"),
@@ -336,35 +390,77 @@ legend(x = "center",
 plot.new()
 dev.off()
 
-tiff(filename="Participant Trajectories ver 2.tiff", height=19, width=9.5,
+tiff(filename="Participant Trajectories ver 2.tiff", height=7.5, width=6.5,
     units="in", res=500)
-par(mfrow=c(6, 3), mai=c(1, 1, 0.82, 0.5), oma=c(2, 3, 0, 3))
+par(mfrow=c(6, 3), mai=c(0.22, 0.42, 0.22, 0.22), oma=c(3.5, 4, 0, 0),
+    mar=c(1, 2.1, 1, 1))
 
 for(i in 1:length(participants.by.dose)) {
   
   p <- participants.by.dose[i]
   participantdata <- atmardata[atmardata$participant==p, ]
   sympdata <- atmarsymptoms[atmarsymptoms$participant==p, ]
-   params <- unlist(params.backtoinitial[params.backtoinitial$participant==p,][2:5])
+  params <- unlist(params.backtoinitial[params.backtoinitial$participant==p,][2:5])
   dose <- unique(participantdata$dose)
   
-  plot.viralload(
+  if (i %in% c(1, 4, 7, 10, 13)) {
+    plot.viralload(
+      data=participantdata, 
+      pars=params, 
+      sympdata=sympdata, 
+      max.modeltime=maxt.backtoinitial[maxt.backtoinitial$participant==p,]$max.point,
+      yhigh=14,
+      cex=1,
+      xaxisLabs=F,
+      cex_labels=0.8,
+      xlabel="",
+      ylabel="Viral shedding",
+      example=FALSE)
+  } else if (i %in% c(14, 15)) {
+     plot.viralload(
+      data=participantdata, 
+      pars=params, 
+      sympdata=sympdata, 
+      max.modeltime=maxt.backtoinitial[maxt.backtoinitial$participant==p,]$max.point,
+      yhigh=14,
+      cex=1,
+      yaxisLabs=F,
+      cex_labels=0.8,
+      xlabel="Hours after inoculation",
+      ylabel="",
+      example=FALSE) 
+  } else if (i==16) {
+    plot.viralload(
+      data=participantdata, 
+      pars=params, 
+      sympdata=sympdata, 
+      max.modeltime=maxt.backtoinitial[maxt.backtoinitial$participant==p,]$max.point,
+      yhigh=14,
+      cex=1,
+      cex_labels=0.8,
+      xlabel="Hours after inoculation",
+      ylabel="Viral shedding",
+      example=FALSE)
+  } else {
+    plot.viralload(
     data=participantdata, 
     pars=params, 
     sympdata=sympdata, 
-     max.modeltime=maxt.backtoinitial[maxt.backtoinitial$participant==p,]$max.point,
+    max.modeltime=maxt.backtoinitial[maxt.backtoinitial$participant==p,]$max.point,
     yhigh=14,
-    cex=1.5,
-    cex_labels=1.25,
-    xlabel="Hours after inoculation",
-    ylabel="Viral shedding",
-    example=FALSE,
-    letter=toupper(letters)[i])
+    cex=1,
+    xaxisLabs=F,
+    yaxisLabs=F,
+    cex_labels=0.8,
+    xlabel="",
+    ylabel="",
+    example=FALSE)
+  }
 }
 
 par(mar=c(0, 0, 0, 0))
 plot.new()
-legend(x = "center",
+legend(x = "bottom",
        legend = c("4800 RT-PCR Units",
                   "48 RT-PCR Units",
                   "4.8 RT-PCR Units"),
