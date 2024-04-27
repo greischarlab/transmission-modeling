@@ -1,20 +1,21 @@
 ---
 title: "CHI Trial Meta-Analysis"
-author: "Kayla Zhang"
-date: "2024-02-17"
-output: word_document
-editor_options: 
-  chunk_output_type: console
+author: "Kayla Zhang, Damie Pak, Megan Greischar"
+date: "2024-04-27"
+output:
+  bookdown::pdf_document2:
+    toc: no
+    fig_caption: yes
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warnings = FALSE)
 ```
 
 Here we combine shedding and symptom timing data from the CHI trials we 
 collected into one plot.
 
-```{r}
+```{r, fig.height = 7.5, fig.width = 6.5}
 plot.segment <- function(xstart, xlength, dotted, col, 
                          ypos, isindividual) {
   
@@ -110,9 +111,6 @@ labels.right <- list(c("", "", "", "", "", "", "", "", "",
                   "Influenza A", "", "", "", "", "", "", "", "", ""))
 
 {
-  tiff(filename="Complete Shedding Vs. Symptom.tiff", 
-           height=7.5, width=6.5, units="in", res=500)
-
   par(bty='n', mfrow=c(1, 2), oma=c(0.1, 2, 0,0), mai=c(1.02, 0.82, 0, 0.42), xpd=TRUE)
   
   plot.pane(leftpane, labels.left)
@@ -123,7 +121,5 @@ labels.right <- list(c("", "", "", "", "", "", "", "", "",
                           "Individual-level data"), 
          lty=c(2, 1, NA, NA), 
          pch=c(NA, NA, NA, 8), bty='n', cex=0.8)
-  
-  dev.off()
 }
 ```

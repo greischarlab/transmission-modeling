@@ -1,7 +1,7 @@
 ---
-title: "Analyzing Data From Atmar 2008"
-author: "Kayla Zhang"
-date: "2024-02-18"
+title: "Analyzing Norovirus Data"
+author: "Kayla Zhang, Damie Pak, Megan Greischar"
+date: "2024-04-27"
 output:
   bookdown::pdf_document2:
     toc: no
@@ -9,12 +9,12 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warnings = FALSE)
 ```
 
 We use the R package metaDigitise to extract data points from figure 1C-E in
 Atmar *et al*., 2008.
-```{r}
+```{r, echo = TRUE, eval = FALSE}
 require(metaDigitise)
  
 atmardata <- metaDigitise("Process Images", summary=FALSE)
@@ -124,6 +124,7 @@ make.param.df <- function(data, maxt) {
   return(participantparams)
 }
 
+atmardata <- read.csv("atmardata.csv")
 participants <- unique(atmardata$participant)
 
 # Method 1: Stopping at the first local minimum
@@ -167,22 +168,32 @@ for (p in participants) {
   maxt.backtoinitial[maxt.backtoinitial$participant==p,]$max.point <-  
     which(points.after.peak <= vldata$y[1])[1] + t.peak
 }
+```
 
+Note that because this model is statistical, not deterministic, the parameters
+will fluctuate with each run.
+```{r, eval = FALSE}
 params.localmin <- make.param.df(atmardata, maxt.firstmin)
 
 params.backtoinitial <- make.param.df(atmardata, maxt.backtoinitial)
 ```
 
-Now we plot the trajectories of three participants (703, 722, 724) as an example.
+As a result, we saved the results of our first iteration in a csv file.
 ```{r}
+params.localmin <- read.csv("Atmar Parameters local minimum.csv")
+params.backtoinitial <- read.csv("Atmar Parameters back to initial.csv")
+```
+
+Now we plot the trajectories of three participants (703, 722, 724) as an example.
+```{r, fig.height = 7.5, fig.width = 3.5}
 plot.viralload <- function(data, pars, sympdata, max.modeltime, yhigh, cex,
                            xaxisLabs = T, yaxisLabs = T, 
-                           cex_labels, xlabel, ylabel, example) {
+                           cex_labels, cex.xaxis, xlabel, ylabel, example) {
   
     
   if(unique(participantdata$dose) == '4800') {
     col <- "#E69F00"
-    if (example) {title <- "A) High dose"}
+    if (example) {title <- "A) High dose"} 
   } else if (unique(participantdata$dose) == '48') {
     col <- "#871a6e" 
     if (example) {title <- "B) Medium dose"}
@@ -224,6 +235,13 @@ plot.viralload <- function(data, pars, sympdata, max.modeltime, yhigh, cex,
   
   if (!example) {
     title <- paste("ID:", unique(data$participant))
+    text(x=300, y=13, labels=title, font=2)
+    ylabel.line <- 4.5
+    xlabel.line <- 3.5
+  } else {
+    mtext(title, font=2, line=2)
+    ylabel.line <- 5.5
+    xlabel.line <- 4
   }
   
   points(t.peak, max(predictedvl), pch=redpointstyle, 
@@ -236,7 +254,7 @@ plot.viralload <- function(data, pars, sympdata, max.modeltime, yhigh, cex,
                   expression(200),
                   expression(300),
                   expression(400))}
-  axis(1, cex.axis=cex+0.25, at=seq(0, 400, by=100), labels = xLabs,
+  axis(1, cex.axis=cex.xaxis, at=seq(0, 400, by=100), labels = xLabs,
        line=1.25,
        mgp=c(2, 0.75, 0), tck=-0.04)
   
@@ -256,11 +274,9 @@ plot.viralload <- function(data, pars, sympdata, max.modeltime, yhigh, cex,
        las=2, 
        mgp=c(2, 1, 0), tck= -0.04)
 
-  text(x=300, y=13, labels=title, font=2)
-
-  mtext(text=ylabel, side=2, line=4.5, cex=cex_labels)
+  mtext(text=ylabel, side=2, line=ylabel.line, cex=cex_labels)
   
-  mtext(text=xlabel, side=1, line=3.5, cex=cex_labels)
+  mtext(text=xlabel, side=1, line=xlabel.line, cex=cex_labels)
   
 }
 
@@ -268,8 +284,6 @@ atmarsymptoms <- read.csv('atmarsymptoms.csv')
 
 participantexamples <- c('703', '722', '724')
 
-tiff(filename="Example Atmar.tiff", height=7.5, width=3.5, units = "in",
-    res=500)
 par(mfrow=c(3, 1), mai=c(0.52, 0.82, 0.42, 0.1), oma=c(2, 3, 0, 0))
 
 for(p in participantexamples) {
@@ -296,21 +310,19 @@ for(p in participantexamples) {
                  yhigh=13,
                  cex=1.33, 
                  cex_labels=1,
+                 cex.xaxis=1.33,
                  xlabel=xlabel,
                  ylabel=ylabel,
                  example=TRUE)
 }
-dev.off()
 ```
 
 We then plot the trajectories of each participant using both sets of endpoints.
 Since they produce qualitatively similar fits, we arbitrarily use the first 
 local minimum in pathogen load as the endpoint going forward.
-```{r}
+```{r, fig.height = 7.5, fig.width = 6.5}
 participants.by.dose <- unique(atmardata$participant[order(atmardata$dose)])
 
-tiff(filename="Participant Trajectories.tiff", height=7.5, width=6.5,
-    units="in", res=500)
 par(mfrow=c(6, 3), mai=c(0.22, 0.42, 0.22, 0.22), oma=c(3.5, 4, 0, 0),
     mar=c(1, 2.1, 1, 1))
 
@@ -332,6 +344,7 @@ for(i in 1:length(participants.by.dose)) {
       cex=1,
       xaxisLabs=F,
       cex_labels=0.8,
+      cex.xaxis=1.25,
       xlabel="",
       ylabel="Viral shedding",
       example=FALSE)
@@ -345,6 +358,7 @@ for(i in 1:length(participants.by.dose)) {
       cex=1,
       yaxisLabs=F,
       cex_labels=0.8,
+      cex.xaxis=1.25,
       xlabel="Hours after inoculation",
       ylabel="",
       example=FALSE) 
@@ -357,6 +371,7 @@ for(i in 1:length(participants.by.dose)) {
       yhigh=14,
       cex=1,
       cex_labels=0.8,
+      cex.xaxis=1.25,
       xlabel="Hours after inoculation",
       ylabel="Viral shedding",
       example=FALSE)
@@ -371,6 +386,7 @@ for(i in 1:length(participants.by.dose)) {
     xaxisLabs=F,
     yaxisLabs=F,
     cex_labels=0.8,
+    cex.xaxis=1.25,
     xlabel="",
     ylabel="",
     example=FALSE)
@@ -388,10 +404,7 @@ legend(x = "bottom",
                "#009E73"),
        lty = 1, bty='n')
 plot.new()
-dev.off()
 
-tiff(filename="Participant Trajectories ver 2.tiff", height=7.5, width=6.5,
-    units="in", res=500)
 par(mfrow=c(6, 3), mai=c(0.22, 0.42, 0.22, 0.22), oma=c(3.5, 4, 0, 0),
     mar=c(1, 2.1, 1, 1))
 
@@ -413,6 +426,7 @@ for(i in 1:length(participants.by.dose)) {
       cex=1,
       xaxisLabs=F,
       cex_labels=0.8,
+      cex.xaxis=1.25,
       xlabel="",
       ylabel="Viral shedding",
       example=FALSE)
@@ -426,6 +440,7 @@ for(i in 1:length(participants.by.dose)) {
       cex=1,
       yaxisLabs=F,
       cex_labels=0.8,
+      cex.xaxis=1.25,
       xlabel="Hours after inoculation",
       ylabel="",
       example=FALSE) 
@@ -438,6 +453,7 @@ for(i in 1:length(participants.by.dose)) {
       yhigh=14,
       cex=1,
       cex_labels=0.8,
+      cex.xaxis=1.25,
       xlabel="Hours after inoculation",
       ylabel="Viral shedding",
       example=FALSE)
@@ -452,6 +468,7 @@ for(i in 1:length(participants.by.dose)) {
     xaxisLabs=F,
     yaxisLabs=F,
     cex_labels=0.8,
+    cex.xaxis=1.25,
     xlabel="",
     ylabel="",
     example=FALSE)
@@ -469,19 +486,18 @@ legend(x = "bottom",
                "#009E73"),
        lty = 1, bty='n')
 plot.new()
-dev.off()
 ```
 Because participants 723 and 731 do not have clear peaks in pathogen load,
 we exclude them from any future calculations using our conservative measure
 of pre-symptomatic transmission, which is that peak pathogen load is reached
 before symptom onset.
 
-```{r}
+```{r, fig.height = 6.5, fig.width = 3.5}
 excluded.participants <- c('723', '731')
 
-tiff(filename="Atmar Disqualified.tiff",
-           height=6.5, width=3.5, units="in", res=500)
-par(mfrow=c(2, 1), mai=c(0.75, 0.75, 0.82, 0.25), oma=c(1, 1, 0, 0))
+tiff("Atmar Disqualified.tiff", res=500, height = 6.5,
+     width = 3.5, unit="in")
+par(mfrow=c(2, 1), mai=c(0.75, 0.75, 0.82, 0.25), oma=c(1, 2, 0, 0))
 
 for(i in 1:length(excluded.participants)) {
 
@@ -505,12 +521,12 @@ for(i in 1:length(excluded.participants)) {
                  yhigh=13,
                  cex=0.9, 
                  cex_labels=0.9,
+                 cex.xaxis=0.9,
                  xlabel=xlabel,
                  ylabel=ylabel,
-                 example=FALSE,
-                 letter = toupper(letters)[i])
+                 example=FALSE)
   if(i==2) {
-    legend(x = "topright",
+    legend(x = 100, y = 10^12,
        legend = c("48 RT-PCR Units",
                   "4.8 RT-PCR Units"),
        col = c("#871a6e",
@@ -518,7 +534,6 @@ for(i in 1:length(excluded.participants)) {
        lty = 1, bty='n', cex=0.8)
   } 
 }
-
 dev.off()
 
 ```
@@ -730,7 +745,7 @@ transmission.latent.pval
 
 We plot delay vs. inoculum dose, delay vs. viral growth rate, and pre-symptomatic
 transmission potential vs. symptom onset in a 3-panel figure.
-```{r}
+```{r, fig.height = 7.5, fig.width = 3.5}
 
 id <- delays.conservative$dose
 id[id==4.8] <- 1
@@ -747,8 +762,6 @@ cex_labels <- .95
 panellabelratio <- .975
 
 {
-  tiff(filename="Atmar Presymptomatic Transmission.tiff", 
-             height=7.5, width=3.5, units="in", res=500)
   par(mfrow=c(3, 1), oma=c(0.5, 4, 0, 0), mai=c(0.6, 0.6, 0.2, 0.1))
   
   # Panel A: Delay between symptom onset and peak viral shedding vs. inoculum
@@ -840,15 +853,13 @@ panellabelratio <- .975
   mtext(text="Symptom onset (day)", side=1, line=3, cex=cex_labels)
 
   text(panellabelratio * 4, panellabelratio * 16 - 1, labels="C", cex=cex, font=2)
-  
-  dev.off()
 }
 ```
 
 We again plot delay vs. inoculum dose and delay vs. viral growth rate using
 the non-conservative measure of pre-symptomatic transmission.
 
-```{r}
+```{r, fig.height = 6, fig.width = 3.5}
 
 id.nonconservative <- delays.nonconservative$dose
 id.nonconservative[id.nonconservative==4.8] <- 1
@@ -860,8 +871,6 @@ cex_labels <- 0.9
 panellabelratio <- .975
 
 {
-  tiff(filename="Atmar Presymptomatic Transmission (non-conservative).tiff", 
-             height=6, width=3.5, units="in", res=500)
   par(mfrow=c(2, 1), oma=c(1.75, 1, 0, 0), mai=c(0.5, 0.82, 0.5, 0.1))
   
   # Panel A: Delay between symptom onset and peak viral shedding vs. inoculum
@@ -931,8 +940,6 @@ panellabelratio <- .975
                           "Least squares regression line"), pch=c(19, 1, NA),
                           lty=c(NA, NA, 1), col=c("black", "black", "red"),
        cex=0.6, bty="n")
-  
-  dev.off()
 }
 ```
 
@@ -941,7 +948,7 @@ and viral growth rate by examining the relationships between time of
 peak shedding and viral growth rate as well as between symptom onset
 and viral growth rate.
 
-```{r}
+```{r, fig.height = 3, fig.width = 6.5}
 
 participant.peaktimes <- data.frame("participant"=participants.conservative, 
                     "peaktime"=rep(0, length(participants.conservative)), 
@@ -985,8 +992,6 @@ cex <- 0.9
 cex_labels <- 0.9
 
 {
-  tiff(filename="Broken up p2 impact.tiff", 
-             height=3, width=6.5, units="in", res=500)
   par(mfrow=c(1, 2), mai=c(0.5, 0.65, 0.1, 0.3), oma=c(1.75, 1, 0, 0))
   
   plot(peaktime/24 ~ p2, data=params.peaktime.data,
@@ -1037,8 +1042,6 @@ cex_labels <- 0.9
   abline(lm.fit.p2.symponset, col="red")
   
   text(panellabelratio * 5 - 4, panellabelratio * 3 + 1, labels="B", cex=cex, font=2)
-  
-  dev.off()
 }
 ```
 

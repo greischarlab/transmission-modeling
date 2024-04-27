@@ -1,14 +1,15 @@
 ---
 title: "Mechanistic Model Usage"
-author: "Kayla Zhang"
-date: "2024-02-11"
-output: word_document
-editor_options: 
-  chunk_output_type: console
+author: "Kayla Zhang, Damie Pak, Megan Greischar"
+date: "2024-04-27"
+output:
+  bookdown::pdf_document2:
+    toc: no
+    fig_caption: yes
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
 
 Our packages for ODE model and plotting:
@@ -17,8 +18,7 @@ Our packages for ODE model and plotting:
 require(deSolve)
 require(ggplot2)
 require(gridExtra)
-library(grid)
-require(dplyr)
+require(grid)
 ```
 
 Here, we have our ODE model, based on King *et al*., 2009,  as well as a 
@@ -148,7 +148,7 @@ dependent only on immune response. When immune response rises above a certain
 threshold, the patient is symptomatic.
 
 We produce simulations of these two models to demonstrate their dynamics.
-```{r}
+```{r, fig.height = 7.5, fig.width = 6.5}
 plot.model.simulations <- function(symp.thresh, data, 
                                     cex, label,
                                     xlimlow, xlimhigh, s.compartment) {
@@ -232,9 +232,6 @@ cex <- 1.25
 cex_labels <- 0.9
 
 {
-  tiff(filename="Model Schematics.tiff", height=7.5, width=6.5,
-      units="in", res=500)
-  
   par(mfrow=c(3, 2), oma=c(0, 2.5, 1.75, 0), mai=c(0.52, 0.32, 0.32, 0.42))
     
   plot.model.simulations(symp.thresh = path.symp.thresh,
@@ -303,8 +300,6 @@ cex_labels <- 0.9
   
   mtext("Time", side=1, line=-1.75, outer=TRUE, adj=0.5)
   mtext("Abundance", side=2, line=1, outer=TRUE)
-     
-  dev.off()
 }
 ```
 
@@ -313,7 +308,7 @@ symptom onset and peak pathogen load against various r values for both
 transmission models (with and without pathogen load cap) to
 investigate the correlation between replication rate and
 pre-symptomatic transmission. 
-```{r}
+```{r, fig.height = 3.5, fig.width = 3.5}
 get.delays.df <- function(data, param.vals, symp.thresh, var_name) {
   delays.df <- data.frame(placeholder_name=integer(), 
                           delay.symponset.peakload=integer())
@@ -456,18 +451,15 @@ plot.varyingr.cap <- plot.varyingr(delays.byr.lowsympthresh.cap,
                                                           "3"= cols[3])) +
   theme(legend.position="none")
 
-tiff(file="Delays varying r.tiff",
-           height=3.5, width=3.5, units="in", res=500)
 grid.arrange(plot.varyingr.nocap, plot.varyingr.cap, nrow=2, 
              left=textGrob("Delay between symptom onset \n and peak pathogen load",
              gp = gpar(fontsize = 6),
              rot=90))
-dev.off()
 ```
 
 We show that for all replication rates used, immune response (X) peaks after 
 pathogen load (P).
-```{r}
+```{r, fig.height = 3.5, fig.width = 6.5}
 peak.immunetime <- function(df) {
   peak.immune <- max(df$immune, na.rm=TRUE)
   return(df[which(df$immune==peak.immune),]$time)
@@ -491,9 +483,6 @@ peaktimes.cap <- get.peaktimes.df(varyingr.cap)
 peaktimes.nocap <- get.peaktimes.df(varyingr.nocap)
 
 {
-  tiff(filename="Pathogen and immune peak times.tiff", height=3.5, width=6.5,
-      units="in", res=500)
-  
   par(mfrow=c(1, 2), mai=c(0.82, 0.72, 0.52, 0.06), oma=c(0, 1, 0, 0))
   
   plot(pathogen.peaktime ~ r, data=peaktimes.cap, ylim=c(0, 0.15), type="l",
@@ -517,7 +506,5 @@ peaktimes.nocap <- get.peaktimes.df(varyingr.nocap)
   legend(50, 0.11, legend=c('Immune effector',
                              'Pathogen'), 
          lty=c(2, 1), col=c("red", "black"), bty="n")
-  
-  dev.off()
 }
 ```
