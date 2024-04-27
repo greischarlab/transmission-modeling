@@ -495,8 +495,6 @@ before symptom onset.
 ```{r, fig.height = 6.5, fig.width = 3.5}
 excluded.participants <- c('723', '731')
 
-tiff("Atmar Disqualified.tiff", res=500, height = 6.5,
-     width = 3.5, unit="in")
 par(mfrow=c(2, 1), mai=c(0.75, 0.75, 0.82, 0.25), oma=c(1, 2, 0, 0))
 
 for(i in 1:length(excluded.participants)) {
@@ -534,7 +532,6 @@ for(i in 1:length(excluded.participants)) {
        lty = 1, bty='n', cex=0.8)
   } 
 }
-dev.off()
 
 ```
 
