@@ -1,0 +1,722 @@
+---
+title: "Supplemental Code"
+author: "Kayla Zhang, Damie Pak, Megan Greischar"
+date: "2024-05-02"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warnings = FALSE)
+```
+
+We use the R package metaDigitise to extract data points from figure 1C-E in
+Atmar *et al*., 2008.
+
+```{r, echo = TRUE, eval = FALSE}
+require(metaDigitise)
+ 
+atmardata <- metaDigitise("Process Images", summary=FALSE)
+atmardata <- rbind(atmardata$scatterplot$atmarplotc.jpg, 
+                   rbind(atmardata$scatterplot$atmarplotd.jpg,
+                         atmardata$scatterplot$atmarplote.jpg))
+```
+
+We then fit a statistical model (Li & Handel, 2014, Holder & Beauchemin, 2011) 
+that estimates viral load values over time to the shedding data we just 
+extracted using the least squares method. There is a typo in 
+Li & Handel, 2014 in the denominator, where the term 
+exp(p4 * (t-p3)) is written as exp(-p4 * (t-p3)) (Holder & Beauchemin, 2011). 
+We make the assumption that viral load is a 1-to-1 mapping to viral shedding. 
+We also subtract 19 hours each time we convert from days to hours to set time 
+point = 0 as time of inoculation, since Atmar et al., 2008 defined study day 1 
+as beginning around 5-6 hours after inoculation.
+
+```{r}
+generate.estimates <- function(t, pars) {
+  
+  p1 <- exp(pars[1])
+  p2 <- exp(pars[2])
+  p3 <- exp(pars[3])
+  p4 <- exp(pars[4])
+  
+  estimate <- (2 * p1) / (exp(-p2*(t-p3)) + exp(p4*(t-p3)))
+  
+  return(log10(estimate))
+  
+} 
+
+sse.viralLoad <- function(pars, data) {
+  vl <- log10(data$y)
+  t <- data$x * 24 - 19
+  
+  estimates <- generate.estimates(t, pars)
+  
+  sse <- sum((estimates - vl)^2)
+  
+  if (sse > 1e20) {
+    return(1e20)
+  } else {
+    return(sse)
+  }
+  
+}
+
+generate.possible.params <- function(data) {
+  numguess <- 1e4
+  
+  fits <- data.frame(matrix(NA, nrow = numguess, ncol = 6))
+  
+  colnames(fits) <- c('p1','p2','p3','p4','convergence','sse')
+  
+  # These are ln(param) values
+  for (g in 1:numguess) {
+    p1 <- runif(1, -1, log(1e12))
+    p2 <- runif(1, -1, 1)
+    p3 <- runif(1, -1, log(4*24))
+    p4 <- runif(1, -5, 1)
+    
+    params <- c(p1, p2, p3, p4)
+    
+    fit <- optim(params, sse.viralLoad, data=data)
+    
+    fits[g, ] <- c(fit$par, fit$convergence, fit$value)
+  }
+  
+  return(fits)
+}
+
+get.params <- function(data) {
+  
+  fits <- generate.possible.params(data)
+  
+  minsse <- min(fits[fits$convergence==0, ]$sse)
+  
+  pars <- unlist((fits[fits$sse == minsse, ])[1:4])
+  
+  return (c(pars, minsse))
+}
+
+```
+
+We define two endpoints for the fit: 1) stopping at the first local minimum
+in viral load after the peak, and 2) stopping at the first viral load value 
+after the peak that is equal to or less than the inoculum dose/initial viral 
+load.
+
+```{r}
+make.param.df <- function(data, maxt) {
+  
+  participants <- unique(data$participant)
+  
+  participantparams <- matrix(nrow=length(participants), ncol=5)
+  
+  for (i in 1:length(participants)) {
+    pars <- get.params(data[data$participant==participants[i],]
+                         [1:(maxt[maxt$participant==participants[i],]$max.point),])
+    
+    participantparams[i,] <- c(participants[i], pars[1:4])
+  }
+  
+  participantparams <- as.data.frame(participantparams)
+  colnames(participantparams) <- c("participant", "p1", "p2",
+                               "p3", "p4")
+  
+  return(participantparams)
+}
+
+atmardata <- read.csv("atmardata.csv")
+atmarsymptoms <- read.csv('atmarsymptoms.csv')
+participants <- unique(atmardata$participant)
+
+# Method 1: Stopping at the first local minimum
+maxt.firstmin <- data.frame(participant=participants, 
+                            max.point=rep(NA, length(participants)))
+
+for (p in participants) {
+  
+  vldata <- atmardata[atmardata$participant==p,]
+  
+  t.peak <- which(vldata$y == max(vldata$y))
+  
+  points.after.peak <- vldata$y[-1:-t.peak]
+  
+  next.points <- append(vldata$y[-1:-(t.peak+1)], NA)
+  
+  local.min <- which(points.after.peak <= next.points)[1] + t.peak
+  
+  if (is.na(local.min)) {
+    
+    maxt.firstmin[maxt.firstmin$participant==p,]$max.point <- length(vldata$y)
+    
+  } else {
+    
+    maxt.firstmin[maxt.firstmin$participant==p,]$max.point <- local.min
+    
+  }
+}
+
+# Method 2: Stopping when viral load gets back down to the initial viral load
+maxt.backtoinitial <- data.frame(participant=participants, 
+                                 max.point=rep(NA, length(participants)))
+
+for (p in participants) {
+  vldata <- atmardata[atmardata$participant==p,]
+  
+  t.peak <- which(vldata$y == max(vldata$y))
+  
+  points.after.peak <- vldata$y[-1:-t.peak]
+  
+  maxt.backtoinitial[maxt.backtoinitial$participant==p,]$max.point <-  
+    which(points.after.peak <= vldata$y[1])[1] + t.peak
+}
+```
+
+Note that because this model is statistical, not deterministic, the parameters
+will fluctuate with each run.
+
+```{r, eval = FALSE}
+params.localmin <- make.param.df(atmardata, maxt.firstmin)
+
+params.backtoinitial <- make.param.df(atmardata, maxt.backtoinitial)
+```
+
+As a result, we saved the results of our first iteration in a csv file.
+
+```{r}
+params.localmin <- read.csv("Atmar Parameters local minimum.csv")
+params.backtoinitial <- read.csv("Atmar Parameters back to initial.csv")
+```
+
+Because participants 723 and 731 do not have clear peaks in pathogen load,
+we exclude them from any future calculations using our conservative measure
+of pre-symptomatic transmission, which is that peak pathogen load is reached
+before symptom onset. We proceed to calculate the delay between symptom onset and peak pathogen load for
+each participant in the Atmar *et al*., 2008 study, barring the excluded ones.
+
+```{r}
+participants.conservative <- participants[participants != 723 & 
+                                            participants != 731]
+
+delays.conservative <- data.frame("participant"=participants.conservative, 
+                    "delay"=rep(0, length(participants.conservative)), 
+                    "dose"=rep(0, length(participants.conservative)))
+
+for (p in participants.conservative) {
+  
+  vldata <- atmardata[atmardata$participant == p, ]
+  sympdata <- atmarsymptoms[atmarsymptoms$participant == p, ]
+  dose <- unique(vldata$dose)
+  
+  params <- unlist(params.localmin[params.localmin$participant==p, 2:5])
+
+  t <- seq(min(vldata$x)*24-19, 
+        vldata[maxt.firstmin[maxt.firstmin$participant==p,]$max.point,]$x*24-19, 
+        by=1)
+  
+  predictedvl <- generate.estimates(t, params)
+  
+  peak.vl.time <- t[which(predictedvl==max(predictedvl))]
+  
+  participantdelay <- peak.vl.time - (sympdata$symp.onset * 24 - 19)
+  
+  delays.conservative[delays.conservative$participant==p, ]$delay <- participantdelay
+   
+  delays.conservative[delays.conservative$participant==p, ]$dose <- dose
+
+}
+```
+
+We run a linear regression between the delay between symptom onset and peak
+pathogen load and each of the 4 parameters from the statistical model as well
+as between viral growth and decay rate. Only p2 and p4, which represent pathogen 
+replication rate and time of peak pathogen load, respectively, were found to 
+have significant correlations with delay. They are also significantly correlated 
+ to each other.
+ 
+```{r}
+params.and.delays.conservative <- merge(params.localmin, delays.conservative)
+
+lm.fit.p1.delay.conservative <- 
+  lm(delay/24 ~ p1, data=params.and.delays.conservative)
+p1.delay.conservative.pval <- 
+  summary(lm.fit.p1.delay.conservative)$coefficients[2,4]
+p1.delay.conservative.pval
+
+lm.fit.p2.delay.conservative <- 
+  lm(delay/24 ~ p2, data=params.and.delays.conservative)
+p2.delay.conservative.pval <- 
+  summary(lm.fit.p2.delay.conservative)$coefficients[2,4]
+p2.delay.conservative.pval
+
+lm.fit.p3.delay.conservative <- 
+  lm(delay/24 ~ p3, data=params.and.delays.conservative)
+p3.delay.conservative.pval <- 
+  summary(lm.fit.p3.delay.conservative)$coefficients[2,4]
+p3.delay.conservative.pval
+
+lm.fit.p4.delay.conservative <- 
+  lm(delay/24 ~ p4, data=params.and.delays.conservative)
+p4.delay.conservative.pval <- 
+  summary(lm.fit.p4.delay.conservative)$coefficients[2,4]
+p4.delay.conservative.pval
+
+# Viral growth vs. decay rate
+lm.fit.p4.p2.conservative <- 
+  lm(p4 ~ p2, data=params.and.delays.conservative)
+p4.p2.conservative.pval <- 
+  summary(lm.fit.p4.p2.conservative)$coefficients[2,4]
+p4.p2.conservative.pval
+
+# Test for collinearity
+lm.fit.p2.p3.conservative <-
+  lm(p2 ~ p3, data=params.and.delays.conservative)
+p2.p3.conservative.pval <-
+  summary(lm.fit.p2.p3.conservative)$coefficients[2,4]
+p2.p3.conservative.pval
+```
+
+Using a non-conservative measure of pre-symptomatic transmission, ie shedding
+onset values as reported in the study, we calculate the delay between
+shedding onset and symptom onset (the length of the latency period). For 
+simplicity's sake, a negative delay still indicates pre-symptomatic transmission.
+
+```{r}
+atmarshedding <- read.csv("atmarshedding.csv")
+
+delays.nonconservative <- data.frame("participant"=participants, 
+                    "delay"=rep(0, length(participants)), 
+                    "dose"=rep(0, length(participants)))
+
+for (p in participants) {
+  
+  sheddata <- atmarshedding[atmarshedding$participant == p, ]
+  sympdata <- atmarsymptoms[atmarsymptoms$participant == p, ]
+  dose <- unique(sheddata$dose)
+  
+  participantdelay <- sheddata$shed.onset - sympdata$symp.onset
+  
+  delays.nonconservative[delays.nonconservative$participant==p, ]$delay <- participantdelay
+   
+  delays.nonconservative[delays.nonconservative$participant==p, ]$dose <- dose
+
+}
+```
+
+As before, we test for any significant correlations between the statistical 
+model parameters and the duration of the latency period as well as
+between viral growth and decay rate. Just as with the
+conservative measure of pre-symptomatic transmission, there is a significant
+correlation between both viral replication rate and time of peak pathogen load
+with the duration of the latency period. We test for collinearity with
+another linear regression, which returns positive.
+
+```{r}
+params.and.delays.nonconservative <- merge(params.localmin, delays.nonconservative)
+
+lm.fit.p1.delay.nonconservative <- 
+  lm(delay ~ p1, data=params.and.delays.nonconservative)
+p1.delay.nonconservative.pval <- 
+  summary(lm.fit.p1.delay.nonconservative)$coefficients[2,4]
+p1.delay.nonconservative.pval
+
+lm.fit.p2.delay.nonconservative <- 
+  lm(delay ~ p2, data=params.and.delays.nonconservative)
+p2.delay.nonconservative.pval <- 
+  summary(lm.fit.p2.delay.nonconservative)$coefficients[2,4]
+p2.delay.nonconservative.pval
+
+lm.fit.p3.delay.nonconservative <- 
+  lm(delay ~ p3, data=params.and.delays.nonconservative)
+p3.delay.nonconservative.pval <- 
+  summary(lm.fit.p3.delay.nonconservative)$coefficients[2,4]
+p3.delay.nonconservative.pval
+
+lm.fit.p4.delay.nonconservative <- 
+  lm(delay ~ p4, data=params.and.delays.nonconservative)
+p4.delay.nonconservative.pval <- 
+  summary(lm.fit.p4.delay.nonconservative)$coefficients[2,4]
+p4.delay.nonconservative.pval
+
+# Viral growth vs. decay rate
+lm.fit.p4.p2.nonconservative <- 
+  lm(p4 ~ p2, data=params.and.delays.nonconservative)
+p4.p2.nonconservative.pval <- 
+  summary(lm.fit.p4.p2.nonconservative)$coefficients[2,4]
+p4.p2.nonconservative.pval
+
+# Test for collinearity
+lm.fit.p2.p3.nonconservative <-
+  lm(p2 ~ p3, data=params.and.delays.nonconservative)
+p2.p3.nonconservative.pval <-
+  summary(lm.fit.p2.p3.nonconservative)$coefficients[2,4]
+p2.p3.nonconservative.pval
+```
+
+We also run a linear regression between pre-symptomatic transmission potential,
+measured as average shedding prior to symptoms, and time of symptom onset. 
+There is no correlation.
+
+```{r}
+transmission.latent <- data.frame("participant"=participants.conservative, 
+                                  "dose"=rep(0, length(participants.conservative)),
+                    "transmission_potential"=rep(0, length(participants.conservative)), 
+                    "symptom_onset"=rep(0, length(participants.conservative)))
+
+for (i in 1:length(participants.conservative)) {
+  p <- participants.conservative[i]
+  
+  transmission.latent[i,]$participant <- p
+  
+  symp.onset <- atmarsymptoms[atmarsymptoms$participant == p,]$symp.onset
+  
+  transmission.latent[i,]$symptom_onset <- symp.onset
+  
+  params <- unlist(params.localmin[params.localmin$participant == p,][2:5])
+  
+  vldata <- atmardata[atmardata$participant == p,]
+  
+  transmission.latent[i,]$dose <- unique(vldata$dose)
+  
+  shed.onset <- min(vldata$x) * 24 - 19
+  
+  if(shed.onset > symp.onset * 24 - 19) {
+    avg.shedding.latent <- 0
+  } else {
+    t <- seq(min(vldata$x)*24-19, symp.onset*24-19, by=1)
+    vl.latent <- 10^generate.estimates(t, params)
+    avg.shedding.latent <- log10(mean(vl.latent))
+  }
+  
+  transmission.latent[i,]$transmission_potential <- avg.shedding.latent
+}
+
+transmission.latent.fit <- lm(transmission_potential ~ symptom_onset, 
+                              data = transmission.latent)
+transmission.latent.pval <- 
+  summary(transmission.latent.fit)$coefficients[2,4]
+
+transmission.latent.pval
+```
+
+Lastly, we break down the correlation between pre-symptomatic transmission
+and viral growth rate by examining the relationships between time of
+peak shedding and viral growth rate as well as between symptom onset
+and viral growth rate. There is a significant correlation between 
+viral growth rate and time of peak shedding, but not between 
+viral growth rate and time of symptom onset.
+
+```{r, fig.height = 3, fig.width = 6.5}
+
+participant.peaktimes <- data.frame("participant"=participants.conservative, 
+                    "peaktime"=rep(0, length(participants.conservative)), 
+                    "dose"=rep(0, length(participants.conservative)))
+
+for (p in participants.conservative) {
+  
+  vldata <- atmardata[atmardata$participant == p, ]
+  
+  t <- seq(min(vldata$x)*24-19, 
+        vldata[maxt.firstmin[maxt.firstmin$participant==p,]$max.point,]$x*24-19, 
+        by=1)
+  
+  params <- unlist(params.localmin[params.localmin$participant==p, 2:5])
+  
+  predictedvl <- generate.estimates(t, params)
+  
+  participant.peaktime <- t[which(predictedvl==max(predictedvl))]
+  
+  dose <- unique(vldata$dose)
+  
+  participant.peaktimes[participant.peaktimes$participant==p, ]$dose <- dose
+  
+  participant.peaktimes[participant.peaktimes$participant==p, ]$peaktime <- 
+    participant.peaktime
+}
+
+participant.params <- params.localmin[params.localmin$participant != 723 & 
+                                        params.localmin$participant != 731,]
+
+params.peaktime.data <- merge(merge(participant.params, participant.peaktimes),
+                              delays.conservative)
+lm.fit.p2.peaktime <- lm(peaktime/24 ~ p2, data=params.peaktime.data)
+p2.peaktime.pval <- summary(lm.fit.p2.peaktime)$coefficients[2,4]
+p2.peaktime.pval
+
+params.symp.data <- merge(merge(participant.params, atmarsymptoms),
+                          delays.conservative)
+lm.fit.p2.symponset <- lm(symp.onset ~ p2, data=params.symp.data)
+p2.symponset.pval <- summary(lm.fit.p2.symponset)$coefficients[2,4]
+p2.symponset.pval
+```
+
+The correlation between peak shedding and viral growth rate is verified
+by running a linear regression between the p2 and p3 parameters from the
+statistical model.
+
+```{r}
+
+lm.fit.p2.p3 <- 
+  lm(p3 ~ p2, data=participant.params)
+p2.p3.pval <- 
+  summary(lm.fit.p2.p3)$coefficients[2,4]
+p2.p3.pval
+
+```
+
+Turning to the second part of our study, i.e. using a deterministic model to
+replicate the findings above, here are our packages for ODE model and plotting:
+
+```{r}
+require(deSolve)
+require(ggplot2)
+require(gridExtra)
+require(grid)
+```
+
+Here, we have our ODE model, based on King *et al*., 2009,  as well as a 
+modified model implementing a pathogen carrying capacity.
+```{r}
+transmission.model <- function(t, x, params) {
+  P <- x[1]
+  X <- x[2]
+
+  with(
+    as.list(params),
+    {
+      dP <- r*P - k*X*P
+      dX <- a - d*X + y*k*X*P
+    
+      res <- c(dP, dX)
+      list(res)
+    }
+  ) 
+}
+
+transmission.model.cap <- function(t, x, params) {
+  P <- x[1]
+  X <- x[2]
+
+  with(
+    as.list(params),
+    {
+      dP <- r*P*(1 - P/(5*10^5)) - k*X*P
+      dX <- a - d*X + y*k*X*P
+    
+      res <- c(dP, dX)
+      list(res)
+    }
+  ) 
+}
+```
+
+We define below some useful functions for defining parameters and creating 
+dataframes containing the simulated data from our model. We focus on varying 
+pathogen replication rate and immune cell kill rate of the pathogen in the
+present study, so we maintain constant values for the remaining parameters
+based on values used in King *et al*., 2009. We truncate the 
+dataframes when pathogen load reaches 0, assuming pathogen clearance. 
+
+```{r}
+get.params <- function(k, r) {
+  return(c(y=10^-4, k=k, r=r, a=1, d=.5))
+}
+
+desolve_function <- function(tstep, k, r, model, id) {
+  time <- seq(0,2, by=tstep)
+  params <- get.params(k, r)
+
+  df <- data.frame(lsoda(c(P=id, X=0), time, model, 
+                       params))
+  
+  if(any(df$P <= 0)){
+    clearance <- min(which(df$P <= 0))
+    df[clearance:length(time),] <- NA
+  }
+  
+  df <- data.frame(time=time, 
+                  pathogen=df$P, 
+                  immune=df$X, 
+                  k=k, r=r, dose=id)
+  
+  return(df)
+}
+
+```
+
+Here we provide functions for calculating time of peak pathogen load and 
+symptom onset as well as the delay between them. These values are needed to 
+determine whether pre-symptomatic transmission has occurred. If time of peak 
+pathogen load comes before time of symptom onset, meaning the calculated delay
+is negative, then we have pre-symptomatic transmission. We also include 
+a function for creating dataframes that house different values of a chosen
+parameter and the corresponding delays between symptom onset and peak pathogen
+load, allowing us to assess the correlation between that parameter and 
+pre-symptomatic transmission.
+
+```{r}
+peak.pathogenloadtime <- function(df) {
+  peak.pl <- max(df$pathogen, na.rm=TRUE)
+  return(df[which(df$pathogen==peak.pl),]$time)
+}
+
+symptom.onset <- function(df, s.compartment, thresh) {
+  symptomatic <- df[which(df[s.compartment] >= thresh),]$time
+  if(length(symptomatic) > 0) {
+    return(min(symptomatic))
+  } else {
+    return(NA)
+  }
+}
+
+symptom.end <- function(df, s.compartment, thresh) {
+  symptomatic <- df[which(df[s.compartment] >= thresh),]$time
+  if(length(symptomatic) > 0) {
+    return(max(symptomatic))
+  } else {
+    return(NA)
+  }
+}
+
+delay.calculation <- function(df, symp.thresh) {
+  return(peak.pathogenloadtime(df) - symptom.onset(df, 'immune', symp.thresh))
+}
+
+```
+
+The first model we examine is one in which symptom onset and duration is 
+dependent only on pathogen load. We are defining pre-symptomatic 
+transmission as reaching peak pathogen load before symptom onset. This is a 
+conservative method of estimating pre-symptomatic transmission. 
+
+Given this definition, there are two potential outcomes: 1) symptoms 
+threshold is below peak pathogen load, signifying post-symptomatic transmission, 
+and 2) symptoms threshold is above peak pathogen load, signifying 
+asymptomatic infection. The outlier case (symptoms threshold is at peak pathogen 
+load) is ignored. 
+
+The second model we examine is one in which symptom onset and duration is 
+dependent only on immune response. When immune response rises above a certain 
+threshold, the patient is symptomatic.
+
+We produce simulations of these two models to demonstrate their dynamics.
+
+```{r, fig.height = 7.5, fig.width = 6.5}
+
+data.lowreplication.nocap <- desolve_function(tstep=10^-4, 
+                            k=3.5, r=30, model=transmission.model, id=10^4)
+data.highreplication.nocap <- desolve_function(tstep=10^-4, 
+                             k=3.5, r=200, model=transmission.model, id=10^4) 
+
+data.lowreplication.cap <- desolve_function(tstep=10^-4, 
+                            k=3.5, r=30, model=transmission.model.cap, id=10^4)
+data.highreplication.cap <- desolve_function(tstep=10^-4, 
+                             k=3.5, r=200, model=transmission.model.cap, id=10^4) 
+
+path.symp.thresh <- 10^6
+immune.sympthresh <- 10
+immune.pathcap.sympthresh <- 2
+```
+
+Now, we vary pathogen replication rate (r) and plot the delay between
+symptom onset and peak pathogen load against various r values for both 
+transmission models (with and without pathogen load cap) to
+investigate the correlation between replication rate and
+pre-symptomatic transmission. 
+
+```{r, fig.height = 3.5, fig.width = 3.5}
+get.delays.df <- function(data, param.vals, symp.thresh, var_name) {
+  delays.df <- data.frame(placeholder_name=integer(), 
+                          delay.symponset.peakload=integer())
+  
+  names(delays.df)[names(delays.df) == "placeholder_name"] <- var_name
+  
+  for (v in param.vals) {
+    df <- data[data[var_name]==v,]
+    delay.symponset.peakload <- delay.calculation(df, symp.thresh)
+    dftoadd <- data.frame(v, delay.symponset.peakload)
+    names(dftoadd)= c(var_name, "delay.symponset.peakload")
+    delays.df <- rbind(delays.df, dftoadd)
+  }
+  
+  delays.df$symp.thresh = symp.thresh
+  
+  return(delays.df)
+}
+
+r_vals <- seq(10, 250, by=10)
+
+varyingr.nocap <- data.frame(k= 3.5, r=r_vals, dose=10^5)
+varyingr.nocap <- do.call(rbind, mapply(desolve_function, 
+                                  tstep=10^-4, 
+                                  k=varyingr.nocap$k, 
+                                  r=varyingr.nocap$r, 
+                                  id=varyingr.nocap$dose,                                  
+                                  MoreArgs=list(model=transmission.model),
+                                  SIMPLIFY = FALSE))
+
+varyingr.cap <- data.frame(k= 7, r=r_vals, dose=10^5)
+varyingr.cap <- do.call(rbind, mapply(desolve_function, 
+                                  tstep=10^-4, 
+                                  k=varyingr.cap$k, 
+                                  r=varyingr.cap$r, 
+                                  id=varyingr.cap$dose,                                  
+                                  MoreArgs=list(model=transmission.model.cap),
+                                  SIMPLIFY = FALSE))
+
+delays.byr.lowsympthresh.nocap <- get.delays.df(data=varyingr.nocap, 
+                                          param.vals=r_vals,
+                                          symp.thresh=5, 
+                                          var_name="r")
+
+delays.byr.medsympthresh.nocap <- get.delays.df(data=varyingr.nocap, 
+                                          param.vals=r_vals,
+                                          symp.thresh=10, 
+                                          var_name="r")
+
+delays.byr.highsympthresh.nocap <- get.delays.df(data=varyingr.nocap, 
+                                          param.vals=r_vals,
+                                          symp.thresh=15, 
+                                          var_name="r")
+
+delays.byr.lowsympthresh.cap <- get.delays.df(data=varyingr.cap, 
+                                          param.vals=r_vals,
+                                          symp.thresh=1, 
+                                          var_name="r")
+
+delays.byr.medsympthresh.cap <- get.delays.df(data=varyingr.cap, 
+                                          param.vals=r_vals,
+                                          symp.thresh=2, 
+                                          var_name="r")
+
+delays.byr.highsympthresh.cap <- get.delays.df(data=varyingr.cap, 
+                                          param.vals=r_vals,
+                                          symp.thresh=3, 
+                                          var_name="r")
+```
+
+We show that for all replication rates used, immune response (X) peaks after 
+pathogen load (P).
+
+```{r, fig.height = 3.5, fig.width = 6.5}
+peak.immunetime <- function(df) {
+  peak.immune <- max(df$immune, na.rm=TRUE)
+  return(df[which(df$immune==peak.immune),]$time)
+}
+
+get.peaktimes.df <- function(data) {
+  peaktimes.df <- data.frame()
+  
+  for (r in r_vals) {
+    df <- data[data$r==r,]
+    pathogen.peaktime <- peak.pathogenloadtime(df)
+    immune.peaktime <- peak.immunetime(df)
+    dftoadd <- data.frame(r, pathogen.peaktime, immune.peaktime)
+    peaktimes.df <- rbind(peaktimes.df, dftoadd)
+  }
+  
+  return(peaktimes.df)
+}
+
+peaktimes.cap <- get.peaktimes.df(varyingr.cap)
+peaktimes.nocap <- get.peaktimes.df(varyingr.nocap)
+```
