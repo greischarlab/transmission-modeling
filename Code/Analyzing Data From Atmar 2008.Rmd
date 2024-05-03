@@ -26,12 +26,12 @@ atmardata <- rbind(atmardata$scatterplot$atmarplotc.jpg,
 We then fit a statistical model (Li & Handel, 2014, Holder & Beauchemin, 2011) 
 that estimates viral load values over time to the shedding data we just 
 extracted using the least squares method. There is a typo in 
-Li & Handel, 2014--in the denominator, they have mistakenly written the term 
-exp(p4 * (t-p3)) as exp(-p4 * (t-p3)). We make the assumption that viral load is 
-a 1-to-1 mapping to viral shedding. We also subtract 19 hours each time we 
-convert from days to hours to set time point = 0 as time of inoculation,
-since Atmar et al., 2008 defined study day 1 as beginning around 5-6 hours after 
-inoculation.
+Li & Handel, 2014 in the denominator, where the term 
+exp(p4 * (t-p3)) is written as exp(-p4 * (t-p3)) (Holder & Beauchemin, 2011). 
+We make the assumption that viral load is a 1-to-1 mapping to viral shedding. 
+We also subtract 19 hours each time we convert from days to hours to set time 
+point = 0 as time of inoculation, since Atmar et al., 2008 defined study day 1 
+as beginning around 5-6 hours after inoculation.
 ```{r}
 generate.estimates <- function(t, pars) {
   
@@ -284,7 +284,7 @@ atmarsymptoms <- read.csv('atmarsymptoms.csv')
 
 participantexamples <- c('703', '722', '724')
 
-par(mfrow=c(3, 1), mai=c(0.52, 0.82, 0.42, 0.1), oma=c(2, 3, 0, 0))
+par(mfrow=c(3, 1), mai=c(0.52, 0.82, 0.42, 0.1), oma=c(2, 3, 0, 2))
 
 for(p in participantexamples) {
 
@@ -884,7 +884,7 @@ panellabelratio <- .975
 
   axis(1, at=seq(1,3), labels=c("4.8", "48", "4800"), cex.axis=cex, 
        mgp=c(0, 0.8, 0), tck=-0.04)
-  mtext(text="Day of peak viral shedding \n minus day of symptom onset",
+  mtext(text="Day of shedding onset \n minus day of symptom onset",
         side=2, line=-1.5, cex=cex_labels, outer=TRUE)
   mtext(text="Inoculum dose", side=1, line=2, cex=cex_labels)
   
