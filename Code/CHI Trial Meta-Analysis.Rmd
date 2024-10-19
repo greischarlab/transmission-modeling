@@ -16,43 +16,19 @@ Here we combine shedding and symptom timing data from the CHI trials we
 collected into one plot.
 
 ```{r, fig.height = 7.5, fig.width = 6.5}
-plot.segment <- function(xstart, xlength, dotted, col, 
-                         ypos, isindividual) {
-  
-  if (dotted) {
-    lty <- 2
-  } else {
-    lty <- 1
-  }
-  
-  if(is.na(xstart)) {
-    start <- 0
-    text(start, ypos, labels="?", cex=0.75, col=col)
-  } else {
-    start <- xstart
-  }
-  
-  if(is.na(xlength)) {
-    length <- 2
-    text(start + length, ypos, labels="?", cex=0.75, col=col)
-  } else {
-    length <- xlength
-  }
+plot.segment <- function(xstart, col, ypos, cex, symptoms, isindividual) {
   
   if (isindividual) {
-    if (!dotted) {
-      points(start + length + 5, ypos, pch=8)
-    }
+    points(xstart + 1, ypos, pch=8)
   }
   
-  segments(start + 0.5, ypos, start + length - 0.5, ypos, lty=lty, 
-           col=col)
+  points(xstart + 0.5, ypos, pch=ifelse(symptoms, 15, 16), col=col, cex=cex)
 }
 
 plot.pane <- function(dat, axis.labels) {
   
-  plot(0, 0, xlim=c(0, 40), ylim=c(0, nrow(rightpane) * 4), col = "white", 
-       xlab= "", ylab='', yaxt='n', mgp=c(0, 0.8, 0), tck=-0.04)
+  plot(0, 0, xlim=c(0,6), ylim=c(0, max(nrow(rightpane), nrow(leftpane)) * 4), 
+       col = "white", xlab= "", ylab='', yaxt='n', mgp=c(0, 0.8, 0), tck=-0.04)
   
   axis.ystart <- 0
   
@@ -65,18 +41,18 @@ plot.pane <- function(dat, axis.labels) {
       row <- currvirusdat[i,]
     
       plot.segment(xstart=row$shed.onset, 
-                   xlength=row$shed.dur, 
-                   dotted=FALSE, 
                    col=currviruscol, 
                    ypos=axis.ystart+i*4-2.25,
-                   isindividual= row$study=='Atmar2008')
+                   cex=2,
+                   symptoms=FALSE,
+                   isindividual=FALSE)
       
       plot.segment(xstart=row$symptom.onset, 
-                   xlength=row$symptom.dur, 
-                   dotted=TRUE, 
-                   col=currviruscol, 
-                   ypos=axis.ystart+i*4 - 0.5,
-                   isindividual= row$study=='Atmar2008')
+                   col="grey", 
+                   ypos=axis.ystart+i*4 - 2.25,
+                   cex=1,
+                   symptoms=TRUE,
+                   isindividual=row$individual)
     }
     
       axis.yend <- axis.ystart + numrows * 4
@@ -87,39 +63,41 @@ plot.pane <- function(dat, axis.labels) {
   }
 }
 
-data <- read.csv('ViralCHIStudies.csv')
+chidata <- read.csv('ViralCHIStudies.csv')
 
-data <- data[order(data$virus),]
-
-leftpane <- data[data$virus != 'Influenza A',]
-rightpane <- data[data$virus == "Influenza A",]
-cols.df <- data.frame(virus = unique(data$virus), 
+leftpane <- chidata[chidata$virus %in% c('Influenza A', 'Rhinovirus'),]
+rightpane <- chidata[chidata$virus %in% c('Norovirus', 'RSV', 'SARS-CoV-2'),]
+cols.df <- data.frame(virus = unique(chidata$virus), 
                       col = c("#401594",
                               "#009E73", 
                               "#D55E00",
                               "#56B4E9",
-                              "#CC79A7",
-                              "#E69F00"))
+                              "#CC79A7"))
 
-labels.left <- list(c("", "Influenza B", ""), 
-            c("", "", "", "Norovirus", "", ""),
-            c("", "", "Rhinovirus", "", ""),
-            c("", "", "RSV", ""),
-            c("", "SARS-CoV-2"))
+labels.left <- list(c("", "", "", "Influenza A", "", "", ""), 
+            c("", "", "", "", "", "", "Rhinovirus", "", "", "", "", ""))
 
-labels.right <- list(c("", "", "", "", "", "", "", "", "",
-                  "Influenza A", "", "", "", "", "", "", "", "", ""))
+labels.right <- list(c("", "", "Norovirus", "", ""),
+            c("", "", "", "", "", "RSV", "", "", "", "", "", ""),
+            c("SARS-CoV-2", ""))
 
+tiff("Figure 1.tiff", res=500, height=6.5, width=6.5, unit="in")
 {
-  par(bty='n', mfrow=c(1, 2), oma=c(0.1, 2, 0,0), mai=c(1.02, 0.82, 0, 0.42), xpd=TRUE)
+  par(bty='n', mfrow=c(1, 2), oma=c(0.1, 2, 0, 0), mai=c(1.02, 0.82, 0, 0.42), xpd=TRUE)
   
   plot.pane(leftpane, labels.left)
   mtext('Days post-inoculation', side=1, line=-3, outer=TRUE,
         adj=0.55)
   plot.pane(rightpane, labels.right)
-  legend(10, 7, legend=c("Symptoms", "Shedding", "No data", 
-                          "Individual-level data"), 
-         lty=c(2, 1, NA, NA), 
-         pch=c(NA, NA, NA, 8), bty='n', cex=0.8)
+  legend("bottomright", inset=c(-0.25, 0),
+         legend=c("Shedding Onset", "Symptom Onset",
+                        "Individual-level data"), 
+         pch=c(16, 15, 8), col=c("black", "grey", "black"),
+         pt.cex=c(2, 1, 1), bty='n', y.intersp=1.5,
+         cex=0.65)
 }
+dev.off()
 ```
+
+
+
