@@ -397,17 +397,23 @@ plot.paramranges <- function(ranges, cols) {
   
   if (param.name == 'p1') {
     xlab <- "Peak Viral Load"
+    label <- "A"
   } else if (param.name == 'p2') {
     xlab <- expression(Viral~replication~rate~(hour^-1))
+    label <- "B"
   } else if (param.name == 'p3') {
     xlab <- "Time of Peak Viral Load (hour)"
+    label <- "C"
   } else {
     xlab <- expression(Viral~decay~rate~(hour^-1))
+    label <- "D"
   }
   
   plot(1, type="n", xlab="", ylab="", yaxt="n", 
      xlim=c(globalmin, globalmax), ylim=c(0, 20), bty="l",
      mgp=c(2, 0.75, 0), tck=-0.04)
+  
+  text(.975 * (globalmax - globalmin) + globalmin, .975*20, label)
   
   axis(2, lwd.ticks=0, labels = NA)
 
@@ -684,10 +690,10 @@ We then plot the trajectories of each participant using both sets of endpoints.
 Since they produce qualitatively similar fits, we arbitrarily use the first 
 local minimum in pathogen load as the endpoint going forward.
 ```{r, fig.height = 7.5, fig.width = 6.5}
-tiff("Participant Trajectories Norovirus.tiff", res=500,
+tiff("Participant trajectories norovirus.tiff", res=500,
       height=7.5, width=6.5, unit="in")
 
-par(mfrow=c(7, 3), mai=c(0.22, 0.42, 0.22, 0.22), oma=c(3.5, 4, 0, 0),
+par(mfrow=c(6, 3), mai=c(0.22, 0.42, 0.22, 0.22), oma=c(3.5, 4, 0, 0),
     mar=c(1, 2.1, 1, 1))
 
 for(i in 1:length(noroParticipants)) {
@@ -700,7 +706,20 @@ for(i in 1:length(noroParticipants)) {
   col <- noro.color
   pch <- noro.pch
   
-  if (i %in% seq(1, 16, by=3)) {
+  if (i==16) {
+    plot.viralload(
+      data=participantdata,
+      pars=params,
+      sympdata=sympdata,
+      max.modeltime=maxt,
+      col=col,
+      pch=pch,
+      ylim.lower = 7,
+      cex_labels=0.8,
+      cex.axis=1.25,
+      xlabel="Days after inoculation",
+      ylabel="Viral shedding")
+  } else if (i %in% seq(1, 16, by=3)) {
     plot.viralload(
       data=participantdata,
       pars=params,
@@ -714,7 +733,7 @@ for(i in 1:length(noroParticipants)) {
       cex.axis=1.25,
       xlabel="",
       ylabel="Viral shedding")
-  } else if (i %in% c(18, 20)) {
+  } else if (i %in% c(15, 17)) {
      plot.viralload(
       data=participantdata,
       pars=params,
@@ -728,19 +747,6 @@ for(i in 1:length(noroParticipants)) {
       cex.axis=1.25,
       xlabel="Days after inoculation",
       ylabel="")
-  } else if (i==19) {
-    plot.viralload(
-      data=participantdata,
-      pars=params,
-      sympdata=sympdata,
-      max.modeltime=maxt,
-      col=col,
-      pch=pch,
-      ylim.lower = 7,
-      cex_labels=0.8,
-      cex.axis=1.25,
-      xlabel="Days after inoculation",
-      ylabel="Viral shedding")
   } else {
     plot.viralload(
     data=participantdata,
@@ -762,10 +768,10 @@ dev.off()
 
 #Repeating with a different endpoint
 
-tiff("Participant Trajectories Norovirus alternative endpoint.tiff", res=500,
+tiff("Participant trajectories norovirus alternative endpoint.tiff", res=500,
       height=7.5, width=6.5, unit="in")
 
-par(mfrow=c(7, 3), mai=c(0.22, 0.42, 0.22, 0.22), oma=c(3.5, 4, 0, 0),
+par(mfrow=c(6, 3), mai=c(0.22, 0.42, 0.22, 0.22), oma=c(3.5, 4, 0, 0),
     mar=c(1, 2.1, 1, 1))
 
 for(i in 1:length(noroParticipants)) {
@@ -778,7 +784,20 @@ for(i in 1:length(noroParticipants)) {
   col <- noro.color
   pch <- noro.pch
   
-  if (i %in% seq(1, 16, by=3)) {
+  if (i==16) {
+    plot.viralload(
+      data=participantdata,
+      pars=params,
+      sympdata=sympdata,
+      max.modeltime=maxt,
+      col=noro.color,
+      pch=noro.pch,
+      ylim.lower = 7,
+      cex_labels=0.8,
+      cex.axis=1.25,
+      xlabel="Days after inoculation",
+      ylabel="Viral shedding")
+  } else if (i %in% seq(1, 16, by=3)) {
     plot.viralload(
       data=participantdata,
       pars=params,
@@ -792,7 +811,7 @@ for(i in 1:length(noroParticipants)) {
       cex.axis=1.25,
       xlabel="",
       ylabel="Viral shedding")
-  } else if (i %in% c(18, 20)) {
+  } else if (i %in% c(15, 17)) {
      plot.viralload(
       data=participantdata,
       pars=params,
@@ -806,19 +825,6 @@ for(i in 1:length(noroParticipants)) {
       cex.axis=1.25,
       xlabel="Days after inoculation",
       ylabel="")
-  } else if (i==19) {
-    plot.viralload(
-      data=participantdata,
-      pars=params,
-      sympdata=sympdata,
-      max.modeltime=maxt,
-      col=noro.color,
-      pch=noro.pch,
-      ylim.lower = 7,
-      cex_labels=0.8,
-      cex.axis=1.25,
-      xlabel="Days after inoculation",
-      ylabel="Viral shedding")
   } else {
     plot.viralload(
     data=participantdata,
@@ -1149,7 +1155,7 @@ calculate.delay.nonconservative <- function(vldata, sympdata) {
 }
 
 delays.nonconservative.noro <- do.call(rbind,  
-                               lapply(noroParticipants, 
+                               lapply(noroParticipants.all, 
                                       function(x) 
                                         data.frame(x, 
                                                    calculate.delay.nonconservative(noro.FShedData[noro.FShedData$ID == x, ],
@@ -1162,7 +1168,7 @@ Non-conservative delays SARS
 ```{r}
 
 delays.nonconservative.sars <- do.call(rbind,  
-                               lapply(sarsParticipants, 
+                               lapply(sarsParticipants.all, 
                                       function(x) 
                                         data.frame(x, 
                                                    calculate.delay.nonconservative(sars.TShedData[sars.TShedData$ID == x, ],
@@ -1480,10 +1486,10 @@ plot.fig3 <- function(delays, params.delays.data,
      xlim=xlim.bcd,
      mgp=c(0, 0.5, 0), tck=-0.04, las=2, bty='l')
   
-  bcd.xlabels <- lapply(seq(xlim.bcd[1], xlim.bcd[2], by=2), function(x) 
+  bcd.xlabels <- lapply(seq(xlim.bcd[1], xlim.bcd[2], by=4), function(x) 
          bquote(10^.(x)))
   
-  axis(1, at=seq(xlim.bcd[1], xlim.bcd[2], by=2),
+  axis(1, at=seq(xlim.bcd[1], xlim.bcd[2], by=4),
        labels=do.call(expression, bcd.xlabels),
        cex.axis=cex, 
        mgp=c(0, 0.5, 0), tck=-0.04)
@@ -1700,7 +1706,7 @@ combined.params.sympdata$pathogen <- ifelse(grepl('ID',
                                                       combined.params.sympdata$ID), 
                                                 'Norovirus', 'SARS-CoV-2')
 
-tiff("Figure 3.tiff", res=500, height=6.5, width=3.5, unit="in")
+tiff("Pre-symptomatic transmission analysis.tiff", res=500, height=6.5, width=3.5, unit="in")
 
 plot.fig3(
   delays = combined.delays.conservative, 
@@ -1737,7 +1743,7 @@ params.and.delays.nonconservative.combined$pathogen <- ifelse(grepl('ID',
                                                       params.and.delays.nonconservative.combined$ID), 
                                                 'Norovirus', 'SARS-CoV-2')
 
-tiff("Figure S4.tiff", res=500, height=6.5, width=3.5, unit="in")
+tiff("Non-conservative pre-symptomatic transmission analysis.tiff", res=500, height=6.5, width=3.5, unit="in")
 
 plot.fig3(
   delays = combined.delays.nonconservative, 
