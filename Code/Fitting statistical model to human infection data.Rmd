@@ -399,27 +399,17 @@ sars.params.backtoinitial <- participant.params.minsse(sars.fits.backtoinitial)
 
 As a result, we saved the results of our first iteration in a csv file.
 ```{r}
-write.csv(noro.fits.localmin, "Atmar Fits local minimum.csv", row.names=F)
-write.csv(noro.params.localmin, "Atmar Parameters local minimum.csv", row.names=F)
-write.csv(sars.fits.localmin, "Zhou Fits local minimum.csv", row.names=F)
-write.csv(sars.params.localmin, "Zhou Parameters local minimum.csv", row.names=F)
+noro.fits.localmin <- read.csv(here("data", "Ge fits local minimum.csv"))
+noro.params.localmin <- read.csv(here("data", "Ge parameters local minimum.csv"))
 
-write.csv(noro.fits.backtoinitial, "Atmar Fits back to initial.csv", row.names=F)
-write.csv(noro.params.backtoinitial, "Atmar Parameters back to initial.csv", row.names=F)
-write.csv(sars.fits.backtoinitial, "Zhou Fits back to initial.csv", row.names=F)
-write.csv(sars.params.backtoinitial, "Zhou Parameters back to initial.csv", row.names=F)
+sars.fits.localmin <- read.csv(here("data", "Zhou fits local minimum.csv"))
+sars.params.localmin <- read.csv(here("data", "Zhou parameters local minimum.csv"))
 
-noro.fits.localmin <- read.csv("Ge Fits local minimum.csv")
-noro.params.localmin <- read.csv("Ge Parameters local minimum.csv")
+noro.fits.backtoinitial <- read.csv(here("data", "Ge fits back to initial.csv"))
+noro.params.backtoinitial <- read.csv(here("data", "Ge parameters back to initial.csv"))
 
-sars.fits.localmin <- read.csv("Zhou Fits local minimum.csv")
-sars.params.localmin <- read.csv("Zhou Parameters local minimum.csv")
-
-noro.fits.backtoinitial <- read.csv("Ge Fits back to initial.csv")
-noro.params.backtoinitial <- read.csv("Ge Parameters back to initial.csv")
-
-sars.fits.backtoinitial <- read.csv("Zhou Fits back to initial.csv")
-sars.params.backtoinitial <- read.csv("Zhou Parameters back to initial.csv")
+sars.fits.backtoinitial <- read.csv(here("data", "Zhou fits back to initial.csv"))
+sars.params.backtoinitial <- read.csv(here("data", "Zhou parameters back to initial.csv"))
 ```
 
 We plot the range (max and min) of each parameter for the fitting runs with the
@@ -2100,7 +2090,7 @@ dev.off()
 We plot the differences in incubation periods reported in Ge *et al.*, 2023,
 and Atmar *et al.*, 2008.
 ```{r}
-atmarIDs <- read.csv("AtmarIDs.csv")
+atmarIDs <- read.csv(here("data", "atmarIDs.csv"))
 
 # Using peak viral load, inoculum dose, and type of symptoms to match up participant IDs
 
