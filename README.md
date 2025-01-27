@@ -14,5 +14,5 @@ to assess statistical uncertainty.
 # Mechanistic within-host model
 
 'Mechanistic model code.RMD' contains the code for the simulations and analyses of the within-host model we 
-employ to produce a plausible scenario of pre-symptomatic transmission informed by early findings vis-a-vis the 
-Ge *et al*., 2023 and Zhou *et al*., 2023 studies. 
+employ to produce a plausible scenario of pre-symptomatic transmission informed by earlier findings vis-a-vis 
+data from the Ge *et al*., 2023 and Zhou *et al*., 2023 studies. 
