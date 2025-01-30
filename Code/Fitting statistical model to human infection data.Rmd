@@ -1269,7 +1269,7 @@ p2.symponset.pval.sars
 
 ### Bootstrapping for confidence bounds
 We use bootstrapping to create 95% confidence bounds (n = 1000) for each 
-correlation we show in Figures 3, S9, and S10.
+correlation we show in Figures 3, S5, and S6.
 ```{r}
 iters <- 1000
 
@@ -1335,7 +1335,7 @@ for (i in 1:iters) {
   delay.conservative.sample.slopes.sars[i] <- delay.conservative.slope.sars
   delay.conservative.sample.intercepts.sars[i] <- delay.conservative.intercept.sars
   
-  # Fig S9B: delay between symptom onset and shedding onset vs. viral 
+  # Fig S5B: delay between symptom onset and shedding onset vs. viral 
   # replication rate
   delay.nonconservative.resamp.noro <- noro.measures[
     sample(1:nrow(noro.measures), 
@@ -1438,7 +1438,7 @@ for (i in 1:iters) {
   presymp.shed.avg.sample.slopes.sars[i] <- presymp.shed.avg.slope.sars
   presymp.shed.avg.sample.intercepts.sars[i] <- presymp.shed.avg.intercept.sars  
   
-  # Fig S10: cumulative pre-symptomatic shedding vs. duration of latency period
+  # Fig S6: cumulative pre-symptomatic shedding vs. duration of latency period
   presymp.shed.cum.resamp.noro <- noro.measures[!is.na(noro.measures$presymp_transmission_cum),][sample(1:nrow(noro.measures[
     !is.na(noro.measures$presymp_transmission_cum),]),
                                                               size=nrow(noro.measures[
@@ -1471,29 +1471,29 @@ for (i in 1:iters) {
 }
 
 # Fig 3B
-lower.bound.delay.conservativtransmission.latent.avg.fit.noro <- c(quantile(delay.conservative.sample.slopes.noro, 0.025),
+lower.bound.delay.conservative.fit.noro <- c(quantile(delay.conservative.sample.slopes.noro, 0.025),
                                 quantile(delay.conservative.sample.intercepts.noro, 0.025))
 
-upper.bound.delay.conservativtransmission.latent.avg.fit.noro <- c(quantile(delay.conservative.sample.slopes.noro, 0.975), 
+upper.bound.delay.conservative.fit.noro <- c(quantile(delay.conservative.sample.slopes.noro, 0.975), 
                                 quantile(delay.conservative.sample.intercepts.noro, 0.975))
 
-lower.bound.delay.conservativtransmission.latent.avg.fit.sars <- c(quantile(delay.conservative.sample.slopes.sars, 0.025),
+lower.bound.delay.conservative.fit.sars <- c(quantile(delay.conservative.sample.slopes.sars, 0.025),
                                 quantile(delay.conservative.sample.intercepts.sars, 0.025))
                                 
-upper.bound.delay.conservativtransmission.latent.avg.fit.sars <- c(quantile(delay.conservative.sample.slopes.sars, 0.975),
+upper.bound.delay.conservative.fit.sars <- c(quantile(delay.conservative.sample.slopes.sars, 0.975),
                                 quantile(delay.conservative.sample.intercepts.sars, 0.975))
 
-# Fig S9B
-lower.bound.delay.nonconservativtransmission.latent.avg.fit.noro <- c(quantile(delay.nonconservative.sample.slopes.noro, 0.025),
+# Fig S5B
+lower.bound.delay.nonconservative.fit.noro <- c(quantile(delay.nonconservative.sample.slopes.noro, 0.025),
                                 quantile(delay.nonconservative.sample.intercepts.noro, 0.025))
 
-upper.bound.delay.nonconservativtransmission.latent.avg.fit.noro <- c(quantile(delay.nonconservative.sample.slopes.noro, 0.975), 
+upper.bound.delay.nonconservative.fit.noro <- c(quantile(delay.nonconservative.sample.slopes.noro, 0.975), 
                                 quantile(delay.nonconservative.sample.intercepts.noro, 0.975))
 
-lower.bound.delay.nonconservativtransmission.latent.avg.fit.sars <- c(quantile(delay.nonconservative.sample.slopes.sars, 0.025),
+lower.bound.delay.nonconservative.fit.sars <- c(quantile(delay.nonconservative.sample.slopes.sars, 0.025),
                                 quantile(delay.nonconservative.sample.intercepts.sars, 0.025))
                                 
-upper.bound.delay.nonconservativtransmission.latent.avg.fit.sars <- c(quantile(delay.nonconservative.sample.slopes.sars, 0.975),
+upper.bound.delay.nonconservative.fit.sars <- c(quantile(delay.nonconservative.sample.slopes.sars, 0.975),
                                 quantile(delay.nonconservative.sample.intercepts.sars, 0.975))
 
 # Fig 3C
@@ -1546,7 +1546,7 @@ upper.bound.presymp.shed.avg.mod.sars <- c(quantile(presymp.shed.avg.sample.slop
                                        quantile(presymp.shed.avg.sample.intercepts.sars, 
                                                 0.975, na.rm=T))
 
-# Fig S10
+# Fig S6
 
 # There are few people in both the norovirus and SARS-CoV-2 study demonstrating 
 # pre-symptomatic shedding, so sometimes resampling will return the same person 
@@ -1696,16 +1696,16 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.1, 0.1))
   
   # Confidence bounds 
   noro.x <- noro.r.range
-  noro.y.lower <- lower.bound.delay.conservative.mod.noro[1] * noro.x + lower.bound.delay.conservative.mod.noro[2]
-  noro.y.higher <- upper.bound.delay.conservative.mod.noro[1] * noro.x + upper.bound.delay.conservative.mod.noro[2]
+  noro.y.lower <- lower.bound.delay.conservative.fit.noro[1] * noro.x + lower.bound.delay.conservative.fit.noro[2]
+  noro.y.higher <- upper.bound.delay.conservative.fit.noro[1] * noro.x + upper.bound.delay.conservative.fit.noro[2]
   
   polygon(c(rev(noro.x), noro.x), c(rev(noro.y.higher), noro.y.lower), 
         col = rgb(135, 26, 110, alpha=100,
                 maxColorValue=255), border = NA)
   
   sars.x <- sars.r.range
-  sars.y.lower <- lower.bound.delay.conservative.mod.sars[1] * sars.x + lower.bound.delay.conservative.mod.sars[2]
-  sars.y.higher <- upper.bound.delay.conservative.mod.sars[1] * sars.x + upper.bound.delay.conservative.mod.sars[2]
+  sars.y.lower <- lower.bound.delay.conservative.fit.sars[1] * sars.x + lower.bound.delay.conservative.fit.sars[2]
+  sars.y.higher <- upper.bound.delay.conservative.fit.sars[1] * sars.x + upper.bound.delay.conservative.fit.sars[2]
   
   
   polygon(c(rev(sars.x), sars.x), c(rev(sars.y.higher), sars.y.lower), 
@@ -1762,20 +1762,20 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.1, 0.1))
   lines(y_predicted ~ p2, data=sars.cpred, col=sars.color)
   
   # Confidence bounds 
-  noro.y.lower <- (lower.bound.peakshedding.mod.noro[1]/24) * noro.x +
-    (lower.bound.peakshedding.mod.noro[2]/24)
-  noro.y.higher <- (upper.bound.peakshedding.mod.noro[1]/24) * noro.x +
-    (upper.bound.peakshedding.mod.noro[2]/24)
+  noro.y.lower <- (lower.bound.peakshedding.fit.noro[1]/24) * noro.x +
+    (lower.bound.peakshedding.fit.noro[2]/24)
+  noro.y.higher <- (upper.bound.peakshedding.fit.noro[1]/24) * noro.x +
+    (upper.bound.peakshedding.fit.noro[2]/24)
   
   polygon(c(rev(noro.x), noro.x), c(rev(noro.y.higher), noro.y.lower), 
         col=rgb(135, 26, 110, alpha=100,
                 maxColorValue=255), border = NA)
   
   
-  sars.y.lower <- (lower.bound.peakshedding.mod.sars[1]/24) * sars.x +
-    (lower.bound.peakshedding.mod.sars[2]/24)
-  sars.y.higher <- (upper.bound.peakshedding.mod.sars[1]/24) * sars.x +
-    (upper.bound.peakshedding.mod.sars[2]/24)
+  sars.y.lower <- (lower.bound.peakshedding.fit.sars[1]/24) * sars.x +
+    (lower.bound.peakshedding.fit.sars[2]/24)
+  sars.y.higher <- (upper.bound.peakshedding.fit.sars[1]/24) * sars.x +
+    (upper.bound.peakshedding.fit.sars[2]/24)
   
   polygon(c(rev(sars.x), sars.x), c(rev(sars.y.higher), sars.y.lower), 
           col=rgb(86, 179, 233, alpha=100,
@@ -1812,7 +1812,7 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.1, 0.1))
   
   axis(2, at=seq(ylim.d[1], ylim.d[2], by=3), cex.axis=cex, mgp=c(0, 0.5, 0), tck=-0.04, las=2)
   
-    # Lines of best fit
+  # Lines of best fit
   noro.dpred <- data.frame(p2 = noro.r.range)
   noro.dpred <- transform(noro.dpred, y_predicted = predict(lm.fit.p2.symponset.noro, newdata=noro.dpred))
   lines(y_predicted ~ p2, data=noro.dpred, col=noro.color)
@@ -1822,15 +1822,15 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.1, 0.1))
   lines(y_predicted ~ p2, data=sars.dpred, col=sars.color)
   
   # Confidence bounds 
-  noro.y.lower <- lower.bound.symponset.mod.noro[1] * noro.x + lower.bound.symponset.mod.noro[2]
-  noro.y.higher <- upper.bound.symponset.mod.noro[1] * noro.x + upper.bound.symponset.mod.noro[2]
+  noro.y.lower <- lower.bound.symponset.fit.noro[1] * noro.x + lower.bound.symponset.fit.noro[2]
+  noro.y.higher <- upper.bound.symponset.fit.noro[1] * noro.x + upper.bound.symponset.fit.noro[2]
   
   polygon(c(rev(noro.x), noro.x), c(rev(noro.y.higher), noro.y.lower), 
           col = rgb(135, 26, 110, alpha=100,
                   maxColorValue=255), border = NA)
   
-  sars.y.lower <- lower.bound.symponset.mod.sars[1] * sars.x + lower.bound.symponset.mod.sars[2]
-  sars.y.higher <- upper.bound.symponset.mod.sars[1] * sars.x + upper.bound.symponset.mod.sars[2]
+  sars.y.lower <- lower.bound.symponset.fit.sars[1] * sars.x + lower.bound.symponset.fit.sars[2]
+  sars.y.higher <- upper.bound.symponset.fit.sars[1] * sars.x + upper.bound.symponset.fit.sars[2]
   
   polygon(c(rev(sars.x), sars.x), c(rev(sars.y.higher), sars.y.lower), 
           col=rgb(86, 179, 233, alpha=100,
@@ -1895,7 +1895,7 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.1, 0.1))
         side=2, line=3, cex=cex_labels)
   mtext(text="Latency period (days)", side=1, line=1.5, cex=cex_labels)
   
-    # Lines of best fit
+  # Lines of best fit
   noro.latency.range <- seq(min(measures.combined[measures.combined$pathogen == 'Norovirus',]$latency, na.rm=T), 
                                 max(measures.combined[measures.combined$pathogen == 'Norovirus',]$latency, na.rm=T), length=10)
   noro.pred <- data.frame(latency= noro.latency.range)
@@ -1912,16 +1912,16 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.1, 0.1))
   
   # Confidence bounds 
   noro.x <- noro.latency.range
-  noro.y.lower <- lower.bound.presymp.shed.avg.mod.noro[1] * noro.x + lower.bound.presymp.shed.avg.mod.noro[2]
-  noro.y.higher <- upper.bound.presymp.shed.avg.mod.noro[1] * noro.x + upper.bound.presymp.shed.avg.mod.noro[2]
+  noro.y.lower <- lower.bound.presymp.shed.avg.fit.noro[1] * noro.x + lower.bound.presymp.shed.avg.fit.noro[2]
+  noro.y.higher <- upper.bound.presymp.shed.avg.fit.noro[1] * noro.x + upper.bound.presymp.shed.avg.fit.noro[2]
   
   polygon(c(rev(noro.x), noro.x), c(rev(noro.y.higher), noro.y.lower), 
           col = rgb(135, 26, 110, alpha=100,
                   maxColorValue=255), border = NA)
   
   sars.x <- sars.latency.range
-  sars.y.lower <- lower.bound.presymp.shed.avg.mod.sars[1] * sars.x + lower.bound.presymp.shed.avg.mod.sars[2]
-  sars.y.higher <- upper.bound.presymp.shed.avg.mod.sars[1] * sars.x + upper.bound.presymp.shed.avg.mod.sars[2]
+  sars.y.lower <- lower.bound.presymp.shed.avg.fit.sars[1] * sars.x + lower.bound.presymp.shed.avg.fit.sars[2]
+  sars.y.higher <- upper.bound.presymp.shed.avg.fit.sars[1] * sars.x + upper.bound.presymp.shed.avg.fit.sars[2]
   
   polygon(c(rev(sars.x), sars.x), c(rev(sars.y.higher), sars.y.lower), 
           col=rgb(86, 179, 233, alpha=100,
@@ -2041,20 +2041,20 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.1, 0.1))
   
   # Confidence bounds 
   noro.x <- noro.r.range
-  noro.y.lower <- lower.bound.delay.nonconservative.mod.noro[1] * noro.x + 
-    lower.bound.delay.nonconservative.mod.noro[2]
-  noro.y.higher <- upper.bound.delay.nonconservative.mod.noro[1] * noro.x + 
-    upper.bound.delay.nonconservative.mod.noro[2]
+  noro.y.lower <- lower.bound.delay.nonconservative.fit.noro[1] * noro.x + 
+    lower.bound.delay.nonconservative.fit.noro[2]
+  noro.y.higher <- upper.bound.delay.nonconservative.fit.noro[1] * noro.x + 
+    upper.bound.delay.nonconservative.fit.noro[2]
   
   polygon(c(rev(noro.x), noro.x), c(rev(noro.y.higher), noro.y.lower), 
           col = rgb(135, 26, 110, alpha=100,
                   maxColorValue=255), border = NA)
   
   sars.x <- sars.r.range
-  sars.y.lower <- lower.bound.delay.nonconservative.mod.sars[1] * sars.x + 
-    lower.bound.delay.nonconservative.mod.sars[2]
-  sars.y.higher <- upper.bound.delay.nonconservative.mod.sars[1] * sars.x + 
-    upper.bound.delay.nonconservative.mod.sars[2]
+  sars.y.lower <- lower.bound.delay.nonconservative.fit.sars[1] * sars.x + 
+    lower.bound.delay.nonconservative.fit.sars[2]
+  sars.y.higher <- upper.bound.delay.nonconservative.fit.sars[1] * sars.x + 
+    upper.bound.delay.nonconservative.fit.sars[2]
   
   polygon(c(rev(sars.x), sars.x), c(rev(sars.y.higher), sars.y.lower), 
           col=rgb(86, 179, 233, alpha=100,
@@ -2129,7 +2129,7 @@ plot.new()
         side=2, line=3, cex=cex_labels)
   mtext(text="Latency period (days)", side=1, line=1.5, cex=cex_labels)
   
-    # Lines of best fit
+  # Lines of best fit
   noro.latency.range <- seq(min(measures.combined[measures.combined$pathogen == 'Norovirus',]$latency, na.rm=T), 
                                 max(measures.combined[measures.combined$pathogen == 'Norovirus',]$latency, na.rm=T), length=10)
   noro.pred <- data.frame(latency= noro.latency.range)
@@ -2146,16 +2146,16 @@ plot.new()
   
   # Confidence bounds 
   noro.x <- noro.latency.range
-  noro.y.lower <- lower.bound.presymp.shed.cum.mod.noro[1] * noro.x + lower.bound.presymp.shed.cum.mod.noro[2]
-  noro.y.higher <- upper.bound.presymp.shed.cum.mod.noro[1] * noro.x + upper.bound.presymp.shed.cum.mod.noro[2]
+  noro.y.lower <- lower.bound.presymp.shed.cum.fit.noro[1] * noro.x + lower.bound.presymp.shed.cum.fit.noro[2]
+  noro.y.higher <- upper.bound.presymp.shed.cum.fit.noro[1] * noro.x + upper.bound.presymp.shed.cum.fit.noro[2]
   
   polygon(c(rev(noro.x), noro.x), c(rev(noro.y.higher), noro.y.lower), 
           col = rgb(135, 26, 110, alpha=100,
                   maxColorValue=255), border = NA)
   
   sars.x <- sars.latency.range
-  sars.y.lower <- lower.bound.presymp.shed.cum.mod.sars[1] * sars.x + lower.bound.presymp.shed.cum.mod.sars[2]
-  sars.y.higher <- upper.bound.presymp.shed.cum.mod.sars[1] * sars.x + upper.bound.presymp.shed.cum.mod.sars[2]
+  sars.y.lower <- lower.bound.presymp.shed.cum.fit.sars[1] * sars.x + lower.bound.presymp.shed.cum.fit.sars[2]
+  sars.y.higher <- upper.bound.presymp.shed.cum.fit.sars[1] * sars.x + upper.bound.presymp.shed.cum.fit.sars[2]
   
   polygon(c(rev(sars.x), sars.x), c(rev(sars.y.higher), sars.y.lower), 
           col=rgb(86, 179, 233, alpha=100,
