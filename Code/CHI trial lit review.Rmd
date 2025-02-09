@@ -22,18 +22,18 @@ plot.segment <- function(xstart, col, ypos, cex, symptoms, isindividual, citatio
   } else {
   }
   
-  mtext(citation, side=2, cex=0.8, las=2, at=ypos, line=0.5)
+  text(x=15, y=ypos, labels=citation, cex=0.8, adj=1)
   points(xstart, ypos, pch=ifelse(symptoms, 15, 16), col=col, cex=cex)
   
 }
 
 plot.pane <- function(dat, axis.labels) {
   
-  plot(0, 0, xlim=c(0, 6), ylim=c(0, max(nrow(rightpane), nrow(leftpane)) * 4) + 3, 
+  plot(0, 0, xlim=c(0, 15), ylim=c(0, max(nrow(rightpane), nrow(leftpane)) * 4) + 3, 
        col = "white", xlab= "", ylab='', yaxt='n',
        xaxt="n")
   
-  axis(1, at=seq(0, 6, by=1), mgp=c(0, 0.4, 0), tck=-0.02, cex.axis=0.8)
+  axis(1, at=seq(0, 15, by=3), mgp=c(0, 0.4, 0), tck=-0.02, cex.axis=0.8)
   axis.ystart <- 0
   
   for (v in 1:length(unique(dat$virus))) {
@@ -88,7 +88,7 @@ plot.pane <- function(dat, axis.labels) {
     
       axis.yend <- axis.ystart + numrows * 4
       
-      text(-0.5, axis.yend + 1, axis.labels[v], col=currviruscol, pos=4,
+      text(-0.25, axis.yend + 1, axis.labels[v], col=currviruscol, pos=4,
            cex=0.8)
 
       axis(2, at=seq(axis.ystart, axis.yend, by=4), col=currviruscol, lwd.ticks=0, 
@@ -114,11 +114,11 @@ labels.right <- c("Norovirus", "RSV", "SARS-CoV-2")
 
 tiff("CHI trial literature review.tiff", res=500, height=6.5, width=6.5, unit="in")
 {
-  par(bty='n', mfrow=c(1, 2), oma=c(1, 3, 0, 0), mar=c(1.1, 7.1, 0, 0))
+  par(bty='n', mfrow=c(1, 2), oma=c(1, 0, 0, 0), mar=c(1.1, 0.5, 0, 0))
   plot.pane(leftpane, labels.left)
-  legend(x=1.75, y=16,
+  legend(x=2.75, y=20,
          legend=c("Shedding onset", "Symptom onset",
-                        "Individual data"),
+                        "Individual onset\ndata"),
          pch=c(16, 15, 8), col=c("black", "grey", "black"),
          pt.cex=c(1.8, 0.9, 1), cex=0.7)
   mtext('Days post-inoculation', side=1, line=0, outer=TRUE,
