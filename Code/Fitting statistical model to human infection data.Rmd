@@ -1058,10 +1058,11 @@ sars.measures$presymp_transmission_cum <- sars.presymptrans.cum
 
 ### Linear regressions
 We run a linear regression between the delay between symptom onset and peak
-pathogen load and each of the 4 parameters from the statistical model as well
-as between viral growth and decay rate. In the Ge *et al.*, 2023 study, 
-p1, p2, and p3, i.e. peak viral load, viral replication rate, and time of peak 
-viral load, respectively, were found to have significant correlations with delay. 
+pathogen load and each of the 4 parameters from the statistical model as well as 
+infectious dose. We also run a linear regression between viral growth and decay 
+rate. In the Ge *et al.*, 2023 study, p1, p2, and p3, i.e. peak viral load, 
+viral replication rate, and time of peak viral load, respectively, were found 
+to have significant correlations with delay. 
 ```{r}
 noro.excluding.unclear.peaks <- noro.measures[!noro.measures$ID %in% noro.unclearpeaks,]
 sars.excluding.unclear.peaks <- sars.measures[!sars.measures$ID %in% sars.unclearpeaks,]
@@ -1095,6 +1096,12 @@ lm.fit.p4.delay.conservative.noro <-
 p4.delay.conservative.pval.noro <- 
   summary(lm.fit.p4.delay.conservative.noro)$coefficients[2,4]
 p4.delay.conservative.pval.noro
+
+# Delay vs. infectious dose 
+lm.fit.delay.conservative.dose.noro <- lm(delay_conservative ~ dose, data=noro.measures)
+delay.conservative.dose.pval.noro <- summary(lm.fit.delay.conservative.dose.noro)$
+  coefficients[2, 4]
+delay.conservative.dose.pval.noro
 
 # Viral growth vs. decay rate
 lm.fit.p4.p2.conservative.noro <- 
@@ -1144,8 +1151,8 @@ p4.p2.conservative.pval.sars
 ```
 
 We also test for significant correlations between the statistical 
-model parameters and the duration of the latency period. With this 
-non-conservative estimate of pre-symptomatic transmission, we find no 
+model parameters plus infectious dose and the duration of the latency period. 
+With this non-conservative estimate of pre-symptomatic transmission, we find no 
 significant correlations in the norovirus or SARS-CoV-2 data.
 ```{r}
 lm.fit.p1.delay.nonconservative.noro <- 
@@ -1171,6 +1178,11 @@ lm.fit.p4.delay.nonconservative.noro <-
 p4.delay.nonconservative.pval.noro <- 
   summary(lm.fit.p4.delay.nonconservative.noro)$coefficients[2,4]
 p4.delay.nonconservative.pval.noro
+
+lm.fit.delay.nonconservative.dose.noro <- lm(delay_nonconservative ~ dose, data=noro.measures)
+delay.nonconservative.dose.pval.noro <- summary(lm.fit.delay.nonconservative.dose.noro)$
+  coefficients[2, 4]
+delay.nonconservative.dose.pval.noro
 
 # SARS-CoV-2 data
 lm.fit.p1.delay.nonconservative.sars <- 
@@ -1689,11 +1701,25 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.1, 0.1))
      las=2)
   
   #Average delays per pathogen
-  segments(0.4, mean(noro.measures$delay_conservative, na.rm=T), 1.4,
-           mean(noro.measures$delay_conservative, na.rm=T), col=noro.color,
+  segments(0.63, mean(noro.measures[noro.measures$dose == 4.8,]$delay_conservative, 
+                      na.rm=T), 0.83,
+           mean(noro.measures[noro.measures$dose == 4.8,]$delay_conservative, 
+                na.rm=T), col=noro.color,
            lwd=cex)
   
-  segments(1.75, mean(sars.measures$delay_conservative, na.rm=T), 2.25,
+  segments(0.967, mean(noro.measures[noro.measures$dose == 48,]$delay_conservative, 
+                     na.rm=T), 1.167,
+           mean(noro.measures[noro.measures$dose == 48,]$delay_conservative, 
+                na.rm=T), col=noro.color,
+           lwd=cex)
+  
+  segments(1.3, mean(noro.measures[noro.measures$dose == 4800,]$delay_conservative, 
+                     na.rm=T), 1.5,
+           mean(noro.measures[noro.measures$dose == 4800,]$delay_conservative, 
+                na.rm=T), col=noro.color,
+           lwd=cex)
+  
+  segments(1.9, mean(sars.measures$delay_conservative, na.rm=T), 2.1,
            mean(sars.measures$delay_conservative, na.rm=T), col=sars.color,
            lwd=cex)
   
@@ -2013,11 +2039,25 @@ par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.5, 0.5, 0.1, 0.1))
        las=2)
   
   #Average delays per pathogen
-  segments(0.4, mean(noro.measures$delay_nonconservative, na.rm=T), 1.4,
-           mean(noro.measures$delay_nonconservative, na.rm=T), col=noro.color,
+  segments(0.63, mean(noro.measures[noro.measures$dose == 4.8,]$delay_nonconservative, 
+                      na.rm=T), 0.83,
+           mean(noro.measures[noro.measures$dose == 4.8,]$delay_nonconservative, 
+                na.rm=T), col=noro.color,
            lwd=cex)
   
-  segments(1.75, mean(sars.measures$delay_nonconservative, na.rm=T), 2.25,
+  segments(0.967, mean(noro.measures[noro.measures$dose == 48,]$delay_nonconservative, 
+                     na.rm=T), 1.167,
+           mean(noro.measures[noro.measures$dose == 48,]$delay_nonconservative, 
+                na.rm=T), col=noro.color,
+           lwd=cex)
+  
+  segments(1.3, mean(noro.measures[noro.measures$dose == 4800,]$delay_nonconservative, 
+                     na.rm=T), 1.5,
+           mean(noro.measures[noro.measures$dose == 4800,]$delay_nonconservative, 
+                na.rm=T), col=noro.color,
+           lwd=cex)
+  
+  segments(1.9, mean(sars.measures$delay_nonconservative, na.rm=T), 2.1,
            mean(sars.measures$delay_nonconservative, na.rm=T), col=sars.color,
            lwd=cex)
 

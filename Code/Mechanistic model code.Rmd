@@ -404,6 +404,9 @@ plot.varyingr <- function(delaysbyr1, delaysbyr2, delaysbyr3, size, ylow, yhigh,
     geom_point(data=highlighted_points, aes(x=r, y=delay.symponset.peakload), color="red", size=1)) 
 }
 
+tiff("Delays varying r.tiff", res=500, 
+     height=3.5, width=3.5, unit="in")
+
 cols <- colorRampPalette(c("deepskyblue", "deepskyblue4"))
 cols <- cols(3)
 
@@ -449,9 +452,10 @@ plot.varyingr.cap <- plot.varyingr(delays.byr.lowsympthresh.cap,
   theme(legend.position="none")
 
 grid.arrange(plot.varyingr.nocap, plot.varyingr.cap, nrow=2, 
-             left=textGrob("Delay between symptom onset \n and peak pathogen load",
+             left=textGrob("Day of peak viral load \n minus day of symptom onset",
              gp = gpar(fontsize = 6),
              rot=90))
+dev.off()
 ```
 
 We show that for the range of replication rates used, immune response peaks after 
