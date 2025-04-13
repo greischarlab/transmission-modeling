@@ -12,6 +12,10 @@ output:
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warnings = FALSE)
 ```
 
+```{r}
+library(here)
+```
+
 Here we combine shedding and symptom onset data from the CHI trials we 
 collected into one plot.
 ```{r, fig.height = 7.5, fig.width = 6.5}
