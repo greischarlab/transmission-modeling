@@ -9,7 +9,6 @@ Influenza A,0.4,1,FALSE,Sloan,2020
 Influenza A,2.583333333,2.583333333,TRUE,Grzesiak,2021
 Influenza A,1.4375,2,FALSE,Eiden,2022
 Norovirus,2,2,FALSE,Kirby,2014
-Norovirus,3,3,FALSE,Kirby,2014
 Norovirus,1,1.383333333,FALSE,Bernstein,2015
 Norovirus,1.52,1.06,TRUE,Ge,2023
 Norovirus,3.125,2.75,TRUE,Leon,2011
@@ -17,7 +16,7 @@ Rhinovirus,1,1,FALSE,Mallia,2011
 Rhinovirus,3,1,FALSE,Lutter,2021
 Rhinovirus,2,6,FALSE,Message,2008
 Rhinovirus,5,3,FALSE,Mallia,2012
-Rhinovirus,1,0,FALSE,Deore,2009
+Rhinovirus,1,0,FALSE,DeMore,2009
 Rhinovirus,1,1,FALSE,Spurrell,2005
 Rhinovirus,2,3,FALSE,Mallia,2006
 Rhinovirus,1,1,FALSE,Peterson,2009
@@ -38,6 +37,7 @@ RSV,2.8,1.5,FALSE,DeVincenzo,2014
 RSV,0.5,0.666666667,FALSE,DeVincenzo,2015
 RSV,3.3,5,FALSE,Schmoele-Thoma,2022
 RSV,0.5,0.67,FALSE,DeVincenzo,2022
+RSV,3,1.7,TRUE,Kelly,2015
 RSV,2,4,FALSE,Bagga,2018
-SARS-CoV-2,2.5,2.82,TRUE,Zhou,2023
+SARS-CoV-2,2.41,2.75,TRUE,Zhou,2023
 SARS-CoV-2,1.666666667,2,FALSE,Killingley,2022
