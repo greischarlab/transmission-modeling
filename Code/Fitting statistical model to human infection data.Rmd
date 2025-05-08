@@ -20,6 +20,7 @@ library(data.table)
 library(spatialEco)
 library(pracma)
 library(dplyr)
+library(Polychrome)
 ```
 
 ### Importing/cleaning data
@@ -215,6 +216,8 @@ generate.estimates <- function(t, pars) {
   p4 <- exp(pars[4])
   
   estimate <- (2 * p1) / (exp(-p2*(t-p3)) + exp(p4*(t-p3)))
+  
+  estimate[!is.finite(estimate)] <- min(estimate[is.finite(estimate)])
 
   return(log10(estimate))
   
@@ -240,28 +243,30 @@ sse.viralLoad <- function(pars, data, detect.threshold, detect.threshold.2 = NA)
   
   sse <- sum((estimates - vl)^2, na.rm=TRUE)
 
-  if (sse > 1e20) {
-    return(1e20)
-  } else {
-    return(sse)
-  }
+  return(sse)
+  
   
 }
 
 generate.possible.params <- function(data, detect.threshold,
                                      detect.threshold.2 = NA) {
   
+  convergenceValue = 1
+  
   # These are ln(param) values
+  while(convergenceValue>0){
+    p1 <- runif(1, log(1e9), log(1e13))
+    p2 <- runif(1, log(0.1), log(1)) 
+    p3 <- runif(1, log(12), log(8 * 24))
+    p4 <- runif(1, log(10^(-2)), log(0.1))
+    
+    params <- c(p1, p2, p3, p4)
+    
+    fit <- optim(params, sse.viralLoad, data=data, detect.threshold=detect.threshold,
+                 detect.threshold.2=detect.threshold.2)
+    convergenceValue = fit$convergence
+    }
   
-  p1 <- runif(1, -1, log(1e12))
-  p2 <- runif(1, -1, 1) 
-  p3 <- runif(1, -1, log(4 * 24))
-  p4 <- runif(1, -5, 1)
-  
-  params <- c(p1, p2, p3, p4)
-
-  fit <- optim(params, sse.viralLoad, data=data, detect.threshold=detect.threshold,
-               detect.threshold.2=detect.threshold.2)
   
   param.guess <- data.frame(unique(data$ID), 
                          fit$par[1],
@@ -288,11 +293,41 @@ generate.fits <- function(data, numguess, detect.threshold, detect.threshold.2 =
 
 params.minsse <- function(fits) {
   
-  minsse <- min(fits[fits$convergence==0, ]$sse)
-  pars <- unlist((fits[fits$sse == minsse, ])[1:5])
+  minsse <- min(fits$sse)
+  pars <- unlist((fits[fits$sse == minsse, ]))
+  return(pars)
+}
+
+fits.minsse <- function(fits) {
+  
+  minsse <- min(fits$sse)
+  pars <- unlist((fits[fits$sse == minsse, ]))
   return(pars)
 }
  
+fitWeightings <- function(sseVector){
+  return(1 - sseVector/max(sseVector))
+} 
+
+# return fits resampled with weights from sse values
+params.resampled <- function(fits) {
+  weightedFits <- fitWeightings(fits$sse)
+  resampledIndices <- sample(1:length(fits$sse), 1, 
+                            replace = T, prob = weightedFits)
+  return(fits[resampledIndices,])
+}
+
+participant.fits.resampled <- function(fits) {
+    participants <- unique(fits$ID)
+  
+    participantparams <- do.call(rbind, 
+                               lapply(participants, 
+                                      function(x) params.resampled(fits[fits$ID == x,])))
+  
+    participantparams[, 2:length(participantparams[1,])] <- apply(participantparams[, 2:length(participantparams[1,])], 2, as.numeric)
+  
+    return(participantparams)
+}
 ```
 
 For endpoints, we looked at values on or after the fifth data point, to
@@ -300,7 +335,7 @@ ensure we are not overfitting the model. We define the end of acute infection
 as the first local minimum in viral shedding with two greater 
 points at each side. If there are no data points that meet these criteria, we 
 set the endpoint to the last consecutive positive viral shedding value.
-```{r}
+```{r, results='hide'}
 first.local.min <- function(data) {
   
   if ('y_type' %in% colnames(data)) {
@@ -365,6 +400,18 @@ participant.params.minsse <- function(fits) {
   return(participantparams)
 }
 
+participant.fits.minsse <- function(fits) {
+    participants <- unique(fits$ID)
+  
+    participantparams <- data.frame(do.call(rbind, 
+                               lapply(participants, 
+                                      function(x) fits.minsse(fits[fits$ID == x,]))))
+  
+    participantparams[, 2:length(participantparams[1,])] <- apply(participantparams[, 2:length(participantparams[1,])], 2, as.numeric)
+  
+    return(participantparams)
+}
+
 # Setting the endpoint as the first local minimum
 noro.maxt.firstmin <- do.call(rbind, 
                          lapply(noroParticipants, 
@@ -385,29 +432,24 @@ Note that because this model is statistical, not deterministic, the parameters
 will fluctuate with each run. We account for this uncertainty later on by 
 producing confidence bounds in our analyses via bootstrapping/case resampling.
 ```{r, eval = FALSE}
-noro.fits.localmin <- all.fits(noro.FShedData, noro.maxt.firstmin, 100,
+numFits <- 1000
+noro.fits.localmin <- all.fits(noro.FShedData, noro.maxt.firstmin, numFits,
                                detect.threshold = log10(noro.detection.threshold), 
                                detect.threshold.2 = log10(noro.detection.threshold.2))
-noro.params.localmin <- participant.params.minsse(noro.fits.localmin)
 
-sars.fits.localmin <- all.fits(sars.TShedData, sars.maxt.firstmin, 100,
+sars.fits.localmin <- all.fits(sars.TShedData, sars.maxt.firstmin, numFits,
                                detect.threshold = log10(sars.detection.threshold))
-sars.params.localmin <- participant.params.minsse(sars.fits.localmin)
 ```
 
 As a result, we saved the results of our first iteration in a csv file.
 ```{r}
-# write.csv(noro.fits.localmin, "Ge fits local minimum.csv")
-# write.csv(noro.params.localmin, "Ge parameters local minimum.csv")
-# 
-# write.csv(sars.fits.localmin, "Zhou fits local minimum.csv")
-# write.csv(sars.params.localmin, "Zhou parameters local minimum.csv")
+write.csv(noro.fits.localmin, "Ge fits local minimum.csv")
 
+write.csv(sars.fits.localmin, "Zhou fits local minimum.csv")
 
-noro.params.localmin <- read.csv(here("data", "Ge parameters local minimum.csv"))
+noro.fits.localmin <- read.csv(here("data", "Ge fits local minimum.csv"))
 
-sars.params.localmin <- read.csv(here("data", "Zhou parameters local minimum.csv"))
-
+sars.fits.localmin <- read.csv(here("data", "Zhou fits local minimum.csv"))
 ```
 
 We proceed to plot trajectories for every individual.
@@ -838,15 +880,7 @@ legend("bottom", legend=c("Ge et al., 2023 fits", "Our fits"), lty=c(3, 1),
 
 dev.off()
 ```
-
-
-We exclude participants from some of the upcoming analyses due to unclear peaks.
-```{r}
-noro.unclearpeaks <- c('ID5', 'ID20')
-
-sars.unclearpeaks <- c('Throat_1', 'Throat_12', 'Throat_13', 'Throat_14')
-```
-
+ 
 ### Calculating our measures of interest
 
 Now, we calculate the delay between symptom onset and peak pathogen load for
@@ -856,85 +890,197 @@ non-conservative measure of pre-symptomatic transmission, i.e. the
 delay between shedding onset and symptom onset. A negative delay indicates 
 pre-symptomatic transmission, while a positive one indicates post-symptomatic
 transmission. The delay is in days.
+
 ```{r}
-calculate.peaktime <- function(vldata, maxt, params) {
+lmMetrics <- function(dataSet, columnName, xValues = NA){
+  lmFit <- lm(formula = reformulate("repRate", response = columnName), data = dataSet)
+
+  res <- data.frame(intercept = lmFit$coefficients[[1]], 
+                   slope = lmFit$coefficients[[2]], 
+                   r2 = summary(lmFit)$r.squared)
+  if(any(is.finite(xValues))){
+    res <- predict.lm(lmFit, newdata = data.frame(repRate = xValues))}
+  return(res)
+} 
+
+noro.fits.localmin$dose <- rep(noro.IncubData$dose, each = numFits)
+noro.fits.localmin$incubation <- rep(noro.IncubData$incubation, each = numFits)
+noro.fits.localmin$sheddingOnset <- rep(unlist(lapply(noroParticipants, 
+                                                     function(x) 
+  shed.onset(noro.FShedData[noro.FShedData$ID == x, ]))), each = numFits)
+noro.fits.localmin$repRate <- exp(noro.fits.localmin$p2)
+noro.fits.localmin$peakDay <- exp(noro.fits.localmin$p3)/24
+noro.fits.localmin$symptomsTopeakDay <- noro.fits.localmin$peakDay -
+  noro.fits.localmin$incubation
+noro.fits.localmin$symptomsToStartShedding <- 
+  noro.fits.localmin$sheddingOnset -
+  noro.fits.localmin$incubation
+
+sars.fits.localmin$incubation <- rep(sars.IncubData$incubation, each = numFits)
+sars.fits.localmin$sheddingOnset <- rep(unlist(lapply(sarsParticipants, 
+                                                     function(x) 
+  shed.onset(sars.TShedData[sars.TShedData$ID == x, ]))), each = numFits)
+sars.fits.localmin$repRate <- exp(sars.fits.localmin$p2)
+sars.fits.localmin$peakDay <- exp(sars.fits.localmin$p3)/24
+sars.fits.localmin$symptomsTopeakDay <- sars.fits.localmin$peakDay -
+  sars.fits.localmin$incubation
+sars.fits.localmin$symptomsToStartShedding <- 
+  sars.fits.localmin$sheddingOnset -
+  sars.fits.localmin$incubation
+
+noro.params.localmin <- participant.fits.minsse(noro.fits.localmin)
+
+sars.params.localmin <- participant.fits.minsse(sars.fits.localmin)
+
+```
+
+We exclude participants from some of the upcoming analyses due to unclear peaks.
+```{r}
+noro.unclearpeaks <- c('ID5', 'ID20')
+
+sars.unclearpeaks <- c('Throat_1', 'Throat_12', 'Throat_13', 'Throat_14')
+
+noro.fits.clearpeaks <- noro.fits.localmin[which(!noro.fits.localmin$ID%in%noro.unclearpeaks),]
+
+noro.params.clearpeaks <- noro.params.localmin[which(!noro.params.localmin$ID%in%noro.unclearpeaks),]
+
+sars.fits.clearpeaks <- sars.fits.localmin[which(!sars.fits.localmin$ID%in%sars.unclearpeaks),]
+
+sars.params.clearpeaks <- sars.params.localmin[which(!sars.params.localmin$ID%in%sars.unclearpeaks),]
+```
+
+We then use bootstrapping to create 95% confidence intervals (n = 1000) around 
+the linear regressions we show in Figures 3 and S6.
+```{r} 
+# generate resampled summary table for each participant
+
+iters <- 1000
+n_points <- 10
+
+noro.r.range <- seq(exp(min(noro.params.clearpeaks$p2)),
+                    exp(max(noro.params.clearpeaks$p2)),
+                    length=n_points)
+
+sars.r.range <- seq(exp(min(sars.params.clearpeaks$p2)),
+                    exp(max(sars.params.clearpeaks$p2)),
+                    length=n_points)
+
+noroSummary = data.frame(t = noro.r.range,
+                         peakDay = rep(NA, n_points),
+                         peakDayLCI = rep(NA, n_points),
+                         peakDayUCI = rep(NA, n_points),
+                         symp = rep(NA, n_points), 
+                         sympLCI = rep(NA, n_points),
+                         sympUCI = rep(NA, n_points),
+                         sympToPeakDay = rep(NA, n_points),
+                         sympToPeakDayLCI = rep(NA, n_points),
+                         sympToPeakDayUCI = rep(NA, n_points),
+                         shedding = rep(NA, n_points),
+                         sheddingLCI = rep(NA, n_points),
+                         sheddingUCI = rep(NA, n_points),
+                         sympToShed = rep(NA, n_points),
+                         sympToShedLCI = rep(NA, n_points),
+                         sympToShedUCI = rep(NA, n_points))
+
+sarsSummary = data.frame(t = noro.r.range,
+                         peakDay = rep(NA, n_points),
+                         peakDayLCI = rep(NA, n_points),
+                         peakDayUCI = rep(NA, n_points),
+                         symp = rep(NA, n_points), 
+                         sympLCI = rep(NA, n_points),
+                         sympUCI = rep(NA, n_points),
+                         sympToPeakDay = rep(NA, n_points),
+                         sympToPeakDayLCI = rep(NA, n_points),
+                         sympToPeakDayUCI = rep(NA, n_points),
+                         shedding = rep(NA, n_points),
+                         sheddingLCI = rep(NA, n_points),
+                         sheddingUCI = rep(NA, n_points),
+                         sympToShed = rep(NA, n_points),
+                         sympToShedLCI = rep(NA, n_points),
+                         sympToShedUCI = rep(NA, n_points))
+
+peakDayResamples.noro <- matrix(NA, nrow = iters, ncol = n_points)
+sympResamples.noro <- matrix(NA, nrow = iters, ncol = n_points)
+sympToPeakDayResamples.noro <- matrix(NA, nrow = iters, ncol = n_points)
+sheddingResamples.noro <- matrix(NA, nrow = iters, ncol = n_points)
+sympToShedResamples.noro <- matrix(NA, nrow = iters, ncol = n_points)
+
+peakDayResamples.sars <- matrix(NA, nrow = iters, ncol = n_points)
+sympResamples.sars <- matrix(NA, nrow = iters, ncol = n_points)
+sympToPeakDayResamples.sars <- matrix(NA, nrow = iters, ncol = n_points)
+sheddingResamples.sars <- matrix(NA, nrow = iters, ncol = n_points)
+sympToShedResamples.sars <- matrix(NA, nrow = iters, ncol = n_points)
+
+for(i in 1:iters){
+  noro.params.resampled <- participant.fits.resampled(noro.fits.clearpeaks)
+  sars.params.resampled <- participant.fits.resampled(sars.fits.clearpeaks)
+  print(noro.params.resampled)
+  print(sars.params.resampled)
+
+  peakDayResamples.noro[i, ] <- lmMetrics(noro.params.resampled, 'peakDay', noro.r.range)
+  sympResamples.noro[i, ] <- lmMetrics(noro.params.resampled, 'incubation', noro.r.range)
+  sympToPeakDayResamples.noro[i, ] <- lmMetrics(noro.params.resampled, 'symptomsTopeakDay', noro.r.range)
+  sheddingResamples.noro[i, ] <- lmMetrics(noro.params.resampled, 'sheddingOnset', noro.r.range)
+  sympToShedResamples.noro[i, ] <- lmMetrics(noro.params.resampled, 'symptomsToStartShedding', noro.r.range)
   
-  t <- seq(0, vldata[maxt$max.point,]$days*24, 
-        by=1)
-  
-  predictedvl <- generate.estimates(t, params)
-  
-  peak.vl.time <- t[which(predictedvl==max(predictedvl))]
-  
-  return(peak.vl.time)
+  peakDayResamples.sars[i, ] <- lmMetrics(sars.params.resampled, 'peakDay', sars.r.range)
+  sympResamples.sars[i, ] <- lmMetrics(sars.params.resampled, 'incubation', sars.r.range)
+  sympToPeakDayResamples.sars[i, ] <- lmMetrics(sars.params.resampled, 'symptomsTopeakDay', sars.r.range)
+  sheddingResamples.sars[i, ] <- lmMetrics(sars.params.resampled, 'sheddingOnset', sars.r.range)
+  sympToShedResamples.sars[i, ] <- lmMetrics(sars.params.resampled, 'symptomsToStartShedding', sars.r.range)
+    
 }
 
-calculate.delay.conservative <- function(vldata, sympdata, params, maxt) {
-  
-  if(unique(vldata$ID) %in% c(noro.unclearpeaks, sars.unclearpeaks)) {
-    return(NA)
-  }
-  
-  peak.vl.time <- calculate.peaktime(vldata, maxt, params)
+noroSummary$peakDayLCI <- 
+  apply(peakDayResamples.noro, MARGIN = 2, FUN = function(c) quantile(c, 0.025))
+noroSummary$peakDayUCI <- 
+  apply(peakDayResamples.noro, MARGIN = 2, FUN = function(c) quantile(c, 0.975))
 
-  delay <- peak.vl.time - (sympdata$incubation * 24)
-  
-  return(delay/24)
-}
+noroSummary$sympLCI <- 
+  apply(sympResamples.noro, MARGIN = 2, FUN = function(c) quantile(c, 0.025))
+noroSummary$sympUCI <- 
+  apply(sympResamples.noro, MARGIN = 2, FUN = function(c) quantile(c, 0.975))
 
-calculate.delay.nonconservative <- function(vldata, sympdata) {
-  
-  delay <- shed.onset(vldata) - sympdata$incubation 
-  
-  return(delay)
-}
+noroSummary$sympToPeakDayLCI <- 
+  apply(sympToPeakDayResamples.noro, MARGIN = 2, FUN = function(c) quantile(c, 0.025))
+noroSummary$sympToPeakDayUCI <- 
+  apply(sympToPeakDayResample.noros, MARGIN = 2, FUN = function(c) quantile(c, 0.975))
 
-noro.measures <- do.call(rbind,  
-                               lapply(noroParticipants, 
-                                      function(x) 
-                                        data.frame(x, 
-                                                   unique(noro.FShedData[noro.FShedData$ID == x,]$dose),
-                                                   calculate.delay.conservative(noro.FShedData[noro.FShedData$ID == x, ],
-                                                        noro.IncubData[noro.IncubData$ID == x,],
-                                                        unlist(noro.params.localmin[noro.params.localmin$ID == x,][2:5]), 
-                                                        noro.maxt.firstmin[noro.maxt.firstmin$ID == x,]),
-                                                   calculate.peaktime(noro.FShedData[noro.FShedData$ID == x,],
-                                                                      noro.maxt.firstmin[noro.maxt.firstmin$ID == x,],
-                                                                      unlist(noro.params.localmin[noro.params.localmin$ID==x, 2:5])),
-                                                   shed.onset(noro.FShedData[noro.FShedData$ID == x,]),
-                                                   calculate.delay.nonconservative(noro.FShedData[noro.FShedData$ID == x, ],
-                                                        noro.IncubData[noro.IncubData$ID == x,]),
-                                                   noro.IncubData[noro.IncubData$ID == x,]$incubation
-                                                   )))
+noroSummary$sheddingLCI <- 
+  apply(sheddingResamples.noro, MARGIN = 2, FUN = function(c) quantile(c, 0.025))
+noroSummary$sheddingUCI <- 
+  apply(sheddingResamples.noro, MARGIN = 2, FUN = function(c) quantile(c, 0.975))
 
-colnames(noro.measures) <- c('ID', 'dose', 'delay_conservative', 'peak_time', 
-                             'shed_onset', 'delay_nonconservative', 'incubation')
+noroSummary$sympToShedLCI <- 
+  apply(sympToShedResamples.noro, MARGIN = 2, FUN = function(c) quantile(c, 0.025))
+noroSummary$sympToShedUCI <- 
+  apply(sympToShedResamples.noro, MARGIN = 2, FUN = function(c) quantile(c, 0.975))
 
-noro.measures <- merge(noro.measures, noro.params.localmin, by.x='ID',
-                       by.y='ID')
+sarsSummary$peakDayLCI <- 
+  apply(peakDayResamples.sars, MARGIN = 2, FUN = function(c) quantile(c, 0.025))
+peakDay.upper.bound.noro <- 
+  apply(peakDayResamples.sars, MARGIN = 2, FUN = function(c) quantile(c, 0.975))
 
-sars.measures <- do.call(rbind,  
-                               lapply(sarsParticipants, 
-                                      function(x) 
-                                        data.frame(x, 
-                                                   10,
-                                                   calculate.delay.conservative(sars.TShedData[sars.TShedData$ID == x, ],
-                                                        sars.IncubData[sars.IncubData$ID == x,],
-                                                        unlist(sars.params.localmin[sars.params.localmin$ID == x,][2:5]), 
-                                                        sars.maxt.firstmin[sars.maxt.firstmin$ID == x,]),
-                                                   calculate.peaktime(sars.TShedData[sars.TShedData$ID == x,],
-                                                                      sars.maxt.firstmin[sars.maxt.firstmin$ID == x,],
-                                                                      unlist(sars.params.localmin[sars.params.localmin$ID==x, 2:5])),
-                                                   shed.onset(sars.TShedData[sars.TShedData$ID == x,]),
-                                                   calculate.delay.nonconservative(sars.TShedData[sars.TShedData$ID == x, ],
-                                                        sars.IncubData[sars.IncubData$ID == x,]),
-                                                   sars.IncubData[sars.IncubData$ID == x,]$incubation)))
+sarsSummary$sympLCI <- 
+  apply(sympResamples.sars, MARGIN = 2, FUN = function(c) quantile(c, 0.025))
+sarsSummary$sympUCI <- 
+  apply(sympResamples.sars, MARGIN = 2, FUN = function(c) quantile(c, 0.975))
 
-colnames(sars.measures) <- c('ID', 'dose', 'delay_conservative', 'peak_time', 
-                             'shed_onset', 'delay_nonconservative', 'incubation')
+sarsSummary$sympToPeakDayLCI <- 
+  apply(sympToPeakDayResamples.saras, MARGIN = 2, FUN = function(c) quantile(c, 0.025))
+sarsSummary$sympToPeakDayUCI <- 
+  apply(sympToPeakDayResamples.sars, MARGIN = 2, FUN = function(c) quantile(c, 0.975))
 
-sars.measures <- merge(sars.measures, sars.params.localmin, by.x='ID',
-                       by.y='ID')
+sarsSummary$sheddingLCI <- 
+  apply(sheddingResamples.sars, MARGIN = 2, FUN = function(c) quantile(c, 0.025))
+sarsSummary$sheddingUCI <- 
+  apply(peakDayResamples.sars, MARGIN = 2, FUN = function(c) quantile(c, 0.975))
+
+sarsSummary$sympToShedLCI <- 
+  apply(sympToShedResamples.sars, MARGIN = 2, FUN = function(c) quantile(c, 0.025))
+sarsSummary$sympToShedUCI <- 
+  apply(sympToShedResamples.sars, MARGIN = 2, FUN = function(c) quantile(c, 0.975))
+
 ```
 
 We also calculate pre-symptomatic transmission potential,
@@ -959,28 +1105,28 @@ presymp.transmission.potential <- function(vldata, sympdata, measure='concentrat
   
 }
 
-noro.presymptrans.avg <- apply(noro.measures, 1, 
+noro.presymptrans.avg <- apply(noro.params.localmin, 1, 
                            function(x) presymp.transmission.potential(noro.FShedData[noro.FShedData$ID == x[1],],
                                                                        noro.IncubData[noro.IncubData$ID == x[1],]))
 
-noro.presymp.dur <- apply(noro.measures, 1, 
-                      function(x) -1 * noro.measures[noro.measures$ID == x[1],]$delay_nonconservative)
+noro.presymp.dur <- apply(noro.params.localmin, 1, 
+                      function(x) -1 * noro.params.localmin[noro.params.localmin$ID == x[1],]$symptomsToStartShedding)
 
-noro.measures$presymp_transmission_avg <- noro.presymptrans.avg
-noro.measures$presymp_dur <- noro.presymp.dur
+noro.params.localmin$avgSheddingBeforeSymptoms <- noro.presymptrans.avg
+noro.params.localmin$sheddingTimeBeforeSymptoms <- noro.presymp.dur
 
 
 # SARS-CoV-2 data 
 
-sars.presymptrans.avg <- apply(sars.measures, 1, 
+sars.presymptrans.avg <- apply(sars.params.localmin, 1, 
                            function(x) presymp.transmission.potential(sars.TShedData[sars.TShedData$ID == x[1],],
                                                                        sars.IncubData[sars.IncubData$ID == x[1],]))
 
-sars.presymp.dur <- apply(sars.measures, 1, 
-                      function(x) -1 * sars.measures[sars.measures$ID == x[1],]$delay_nonconservative)
+sars.presymp.dur <- apply(sars.params.localmin, 1, 
+                      function(x) -1 * sars.params.localmin[sars.params.localmin$ID == x[1],]$symptomsToStartShedding)
 
-sars.measures$presymp_transmission_avg <- sars.presymptrans.avg
-sars.measures$presymp_dur <- sars.presymp.dur
+sars.params.localmin$avgSheddingBeforeSymptoms <- sars.presymptrans.avg
+sars.params.localmin$sheddingTimeBeforeSymptoms <- sars.presymp.dur
 ```
 
 We also used cumulative pre-symptomatic shedding as an alternative measure of
@@ -1063,49 +1209,13 @@ noro.FShedData.weightInc <- noro.FShedData.weightInc[
 
 noro.FShedData.weightInc$total_shedding <- avg_shedding
 
-# presymp.transmission.potential.cum <- function(vldata, sympdata, virus) {
-#   
-#   vl.latent <- vldata[vldata$days < sympdata$incubation,]
-#   
-#   if(virus == 'Norovirus') {
-#     if (length(vl.latent$total_shedding) == 1) {
-#       auc.vl.latent <- log10(vl.latent$total_shedding)
-#     } else {
-#       auc.vl.latent <- log10(trapz(vl.latent$days, vl.latent$total_shedding))
-#     }
-#   } else {
-#     vl.latent[is.na(vl.latent$y_virus),]$y_virus <- 0
-#     
-#     if (length(vl.latent$y_virus) == 1) {
-#       auc.vl.latent <- log10(vl.latent$y_virus)
-#     } else {
-#       auc.vl.latent <- log10(trapz(vl.latent$days, vl.latent$y_virus))
-#     }
-#   }
-#   
-#   # if(length(vl.latent[grepl('~', vl.latent$y_type),]$y_virus) > 0) {
-#   #   vl.latent[grepl('~', vl.latent$y_type),]$y_virus <- mean(c(15000, 4e7))
-#   # }
-# 
-#   
-#   if (is.infinite(auc.vl.latent)) {return(NaN)} else {return(auc.vl.latent)}
-# }
-
-noro.presymp.avg.totalshedding <- apply(noro.measures, 1,  
+noro.presymp.avg.totalshedding <- apply(noro.params.localmin, 1,  
                                function(x) presymp.transmission.potential(
                                  noro.FShedData.weightInc[noro.FShedData.weightInc$geID == x[1],],
                                  noro.IncubData[noro.IncubData$ID == x[1],],
                                  'total shedding'))
 
-noro.measures$presymp_transmission_avg_totalshedding <- noro.presymp.avg.totalshedding
-
-# # SARS-CoV-2 data
-# sars.presymptrans.cum <- apply(sars.measures, 1, 
-#                                function(x) presymp.transmission.potential.cum(sars.TShedData[sars.TShedData$ID == x[1],],
-#                                                                                       sars.IncubData[sars.IncubData$ID == x[1],],
-#                                                                               'SARS-CoV-2'))
-# 
-# sars.measures$presymp_transmission_cum <- sars.presymptrans.cum
+noro.params.localmin$avgSheddingBeforeSymptoms_totalshedding <- noro.presymp.avg.totalshedding
 ```
 
 ### Linear regressions
@@ -1117,19 +1227,16 @@ Ge *et al.*, 2023 study, p1, p2, and p3, i.e. peak viral load,
 viral replication rate, and time of peak viral load, respectively, were found 
 to have significant correlations with delay. 
 ```{r}
-noro.excluding.unclear.peaks <- noro.measures[!noro.measures$ID %in% noro.unclearpeaks,]
-sars.excluding.unclear.peaks <- sars.measures[!sars.measures$ID %in% sars.unclearpeaks,]
-
 # Peak viral load vs. delay
 lm.fit.p1.delay.conservative.noro <- 
-  lm(delay_conservative ~ p1, data=noro.measures)
+  lm(symptomsTopeakDay ~ p1, data=noro.params.clearpeaks)
 p1.delay.conservative.pval.noro <- 
   summary(lm.fit.p1.delay.conservative.noro)$coefficients[2,4]
 p1.delay.conservative.pval.noro
 
 # Viral replication rate vs. delay
 lm.fit.p2.delay.conservative.noro <- 
-  lm(delay_conservative ~ p2, data=noro.measures)
+  lm(symptomsTopeakDay ~ p2, data=noro.params.clearpeaks)
 p2.delay.conservative.pval.noro <- 
   summary(lm.fit.p2.delay.conservative.noro)$coefficients[2,4]
 p2.delay.conservative.pval.noro
@@ -1138,33 +1245,33 @@ p2.delay.conservative.rsquared.noro
 
 # Time of peak viral load vs. delay
 lm.fit.p3.delay.conservative.noro <- 
-  lm(delay_conservative ~ p3, data=noro.measures)
+  lm(symptomsTopeakDay ~ p3, data=noro.params.clearpeaks)
 p3.delay.conservative.pval.noro <- 
   summary(lm.fit.p3.delay.conservative.noro)$coefficients[2,4]
 p3.delay.conservative.pval.noro
 
 # Viral decay rate vs. delay
 lm.fit.p4.delay.conservative.noro <- 
-  lm(delay_conservative ~ p4, data=noro.measures)
+  lm(symptomsTopeakDay ~ p4, data=noro.params.clearpeaks)
 p4.delay.conservative.pval.noro <- 
   summary(lm.fit.p4.delay.conservative.noro)$coefficients[2,4]
 p4.delay.conservative.pval.noro
 
 # Delay vs. infectious dose 
-lm.fit.delay.conservative.dose.noro <- lm(delay_conservative ~ dose, 
-                                          data=noro.measures)
+lm.fit.delay.conservative.dose.noro <- lm(symptomsTopeakDay ~ dose, 
+                                          data=noro.params.clearpeaks)
 delay.conservative.dose.pval.noro <- summary(lm.fit.delay.conservative.dose.noro)$
   coefficients[2, 4]
 delay.conservative.dose.pval.noro
 
 # Viral replication rate vs. infectious dose
-lm.fit.p2.dose.noro <- lm(p2 ~ dose, data=noro.excluding.unclear.peaks)
+lm.fit.p2.dose.noro <- lm(p2 ~ dose, data=noro.params.clearpeaks)
 p2.dose.pval.noro <- summary(lm.fit.p2.dose.noro)$coefficients[2, 4]
 p2.dose.pval.noro
 
 # Viral growth vs. decay rate
 lm.fit.p4.p2.conservative.noro <- 
-  lm(p4 ~ p2, data=noro.excluding.unclear.peaks)
+  lm(p4 ~ p2, data=noro.params.clearpeaks)
 p4.p2.conservative.pval.noro <- 
   summary(lm.fit.p4.p2.conservative.noro)$coefficients[2,4]
 p4.p2.conservative.pval.noro
@@ -1175,35 +1282,35 @@ looking at the same parameters.
 ```{r}
 # Peak viral load vs. delay
 lm.fit.p1.delay.conservative.sars <- 
-  lm(delay_conservative ~ p1, data=sars.measures)
+  lm(symptomsTopeakDay ~ p1, data=sars.params.clearpeaks)
 p1.delay.conservative.pval.sars <- 
   summary(lm.fit.p1.delay.conservative.sars)$coefficients[2,4]
 p1.delay.conservative.pval.sars
 
 # Viral replication rate vs. delay
 lm.fit.p2.delay.conservative.sars <- 
-  lm(delay_conservative ~ p2, data=sars.measures)
+  lm(symptomsTopeakDay ~ p2, data=sars.params.clearpeaks)
 p2.delay.conservative.pval.sars <- 
   summary(lm.fit.p2.delay.conservative.sars)$coefficients[2,4]
 p2.delay.conservative.pval.sars
 
 # Time of peak viral load vs. delay
 lm.fit.p3.delay.conservative.sars <- 
-  lm(delay_conservative ~ p3, data=sars.measures)
+  lm(symptomsTopeakDay ~ p3, data=sars.params.clearpeaks)
 p3.delay.conservative.pval.sars <- 
   summary(lm.fit.p3.delay.conservative.sars)$coefficients[2,4]
 p3.delay.conservative.pval.sars
 
 # Viral decay rate vs. delay
 lm.fit.p4.delay.conservative.sars <- 
-  lm(delay_conservative ~ p4, data=sars.measures)
+  lm(symptomsTopeakDay ~ p4, data=sars.params.clearpeaks)
 p4.delay.conservative.pval.sars <- 
   summary(lm.fit.p4.delay.conservative.sars)$coefficients[2,4]
 p4.delay.conservative.pval.sars
 
 # Viral growth vs. decay rate
 lm.fit.p4.p2.conservative.sars <- 
-  lm(p4 ~ p2, data=sars.excluding.unclear.peaks)
+  lm(p4 ~ p2, data=sars.params.clearpeaks)
 p4.p2.conservative.pval.sars <- 
   summary(lm.fit.p4.p2.conservative.sars)$coefficients[2,4]
 p4.p2.conservative.pval.sars
@@ -1217,67 +1324,67 @@ data. Separately, we also run linear regressions between shedding onset and
 replication rate.
 ```{r}
 lm.fit.p1.delay.nonconservative.noro <- 
-  lm(delay_nonconservative ~ p1, data=noro.excluding.unclear.peaks)
+  lm(symptomsToStartShedding ~ p1, data=noro.params.clearpeaks)
 p1.delay.nonconservative.pval.noro <- 
   summary(lm.fit.p1.delay.nonconservative.noro)$coefficients[2,4]
 p1.delay.nonconservative.pval.noro
 
-lm.fit.p2.delay.nonconservative.noro <- lm(delay_nonconservative ~ p2, 
-                                           data=noro.excluding.unclear.peaks)
+lm.fit.p2.delay.nonconservative.noro <- lm(symptomsToStartShedding ~ p2, 
+                                           data=noro.params.clearpeaks)
 p2.delay.nonconservative.pval.noro <- 
   summary(lm.fit.p2.delay.nonconservative.noro)$coefficients[2,4]
 p2.delay.nonconservative.pval.noro
 
 lm.fit.p3.delay.nonconservative.noro <- 
-  lm(delay_nonconservative ~ p3, data=noro.excluding.unclear.peaks)
+  lm(symptomsToStartShedding ~ p3, data=noro.params.clearpeaks)
 p3.delay.nonconservative.pval.noro <- 
   summary(lm.fit.p3.delay.nonconservative.noro)$coefficients[2,4]
 p3.delay.nonconservative.pval.noro
 
 lm.fit.p4.delay.nonconservative.noro <- 
-  lm(delay_nonconservative ~ p4, data=noro.excluding.unclear.peaks)
+  lm(symptomsToStartShedding ~ p4, data=noro.params.clearpeaks)
 p4.delay.nonconservative.pval.noro <- 
   summary(lm.fit.p4.delay.nonconservative.noro)$coefficients[2,4]
 p4.delay.nonconservative.pval.noro
 
-lm.fit.delay.nonconservative.dose.noro <- lm(delay_nonconservative ~ dose, data=noro.measures)
+lm.fit.delay.nonconservative.dose.noro <- lm(symptomsToStartShedding ~ dose, data=noro.params.localmin)
 delay.nonconservative.dose.pval.noro <- summary(lm.fit.delay.nonconservative.dose.noro)$
   coefficients[2, 4]
 delay.nonconservative.dose.pval.noro
 
-lm.fit.p2.shedonset.noro <- lm(shed_onset ~ p2, 
-                                           data=noro.excluding.unclear.peaks)
+lm.fit.p2.shedonset.noro <- lm(sheddingOnset ~ p2, 
+                                           data=noro.params.clearpeaks)
 p2.shedonset.pval.noro <- 
   summary(lm.fit.p2.shedonset.noro)$coefficients[2,4]
 p2.shedonset.pval.noro
 
 # SARS-CoV-2 data
 lm.fit.p1.delay.nonconservative.sars <- 
-  lm(delay_nonconservative ~ p1, data=sars.excluding.unclear.peaks)
+  lm(symptomsToStartShedding ~ p1, data=sars.params.clearpeaks)
 p1.delay.nonconservative.pval.sars <- 
   summary(lm.fit.p1.delay.nonconservative.sars)$coefficients[2,4]
 p1.delay.nonconservative.pval.sars
 
 lm.fit.p2.delay.nonconservative.sars <- 
-  lm(delay_nonconservative ~ p2, data=sars.excluding.unclear.peaks)
+  lm(symptomsToStartShedding ~ p2, data=sars.params.clearpeaks)
 p2.delay.nonconservative.pval.sars <- 
   summary(lm.fit.p2.delay.nonconservative.sars)$coefficients[2,4]
 p2.delay.nonconservative.pval.sars
 
 lm.fit.p3.delay.nonconservative.sars <- 
-  lm(delay_nonconservative ~ p3, data=sars.excluding.unclear.peaks)
+  lm(symptomsToStartShedding ~ p3, data=sars.params.clearpeaks)
 p3.delay.nonconservative.pval.sars <- 
   summary(lm.fit.p3.delay.nonconservative.sars)$coefficients[2,4]
 p3.delay.nonconservative.pval.sars
 
 lm.fit.p4.delay.nonconservative.sars <- 
-  lm(delay_nonconservative ~ p4, data=sars.excluding.unclear.peaks)
+  lm(symptomsToStartShedding ~ p4, data=sars.params.clearpeaks)
 p4.delay.nonconservative.pval.sars <- 
   summary(lm.fit.p4.delay.nonconservative.sars)$coefficients[2,4]
 p4.delay.nonconservative.pval.sars
 
-lm.fit.p2.shedonset.sars <- lm(shed_onset ~ p2, 
-                                           data=sars.excluding.unclear.peaks)
+lm.fit.p2.shedonset.sars <- lm(sheddingOnset ~ p2, 
+                                           data=sars.params.clearpeaks)
 p2.shedonset.pval.sars <- 
   summary(lm.fit.p2.shedonset.sars)$coefficients[2,4]
 p2.shedonset.pval.sars
@@ -1287,22 +1394,22 @@ There is no correlation between average shedding prior to symptoms and the
 duration of shedding in the pre-symptomatic period (symptom onset minus shedding 
 onset) in either the norovirus or SARS-CoV-2 data.
 ```{r}
-transmission.presymp.avg.fit.noro <- lm(presymp_transmission_avg ~ presymp_dur, 
-                              data = noro.measures)
+transmission.presymp.avg.fit.noro <- lm(avgSheddingBeforeSymptoms ~ sheddingTimeBeforeSymptoms, 
+                              data = noro.params.localmin)
 transmission.presymp.avg.pval.noro <- 
   summary(transmission.presymp.avg.fit.noro)$coefficients[2,4]
 
 transmission.presymp.avg.pval.noro
 
-transmission.presymp.avg.totalshedding.fit.noro <- lm(presymp_transmission_avg_totalshedding ~ 
-                                                        presymp_dur, data=noro.measures)
+transmission.presymp.avg.totalshedding.fit.noro <- lm(avgSheddingBeforeSymptoms_totalshedding ~ 
+                                                        sheddingTimeBeforeSymptoms, data=noro.params.localmin)
 transmission.presymp.avg.totalshedding.pval.noro <- summary(transmission.presymp.avg.totalshedding.fit.noro)$
   coefficients[2, 4]
 
 transmission.presymp.avg.totalshedding.pval.noro
 
-transmission.presymp.avg.fit.sars <- lm(presymp_transmission_avg ~ presymp_dur, 
-                              data = sars.measures)
+transmission.presymp.avg.fit.sars <- lm(avgSheddingBeforeSymptoms ~ sheddingTimeBeforeSymptoms, 
+                              data = sars.params.localmin)
 transmission.presymp.avg.pval.sars <- 
   summary(transmission.presymp.avg.fit.sars)$coefficients[2,4]
 
@@ -1319,329 +1426,34 @@ For both norovirus and SARS-CoV-2, there is a significant correlation between
 time of peak shedding and viral growth rate, but not between symptom onset 
 and viral growth rate. There are no significant correlations with dose.
 ```{r}
-lm.fit.p2.peaktime.noro <- lm(peak_time/24 ~ p2, 
-                              data=noro.excluding.unclear.peaks)
+lm.fit.p2.peaktime.noro <- lm(peakDay ~ p2, 
+                              data=noro.params.clearpeaks)
 p2.peaktime.pval.noro <- summary(lm.fit.p2.peaktime.noro)$coefficients[2,4]
 p2.peaktime.pval.noro
 p2.peaktime.rsquared.noro <- summary(lm.fit.p2.peaktime.noro)$r.squared
 p2.peaktime.rsquared.noro
 
-lm.fit.peaktime.dose.noro <- lm(peak_time/24 ~ dose, data=noro.excluding.unclear.peaks)
+lm.fit.peaktime.dose.noro <- lm(peakDay ~ dose, data=noro.params.clearpeaks)
 peaktime.dose.pval.noro <- summary(lm.fit.peaktime.dose.noro)$coefficients[2, 4]
 peaktime.dose.pval.noro
 
-lm.fit.p2.symponset.noro <- lm(incubation ~ p2, data=noro.excluding.unclear.peaks)
+lm.fit.p2.symponset.noro <- lm(incubation ~ p2, data=noro.params.clearpeaks)
 p2.symponset.pval.noro <- summary(lm.fit.p2.symponset.noro)$coefficients[2,4]
 p2.symponset.pval.noro
 
-lm.fit.symponset.dose.noro <- lm(incubation ~ dose, data=noro.measures)
+lm.fit.symponset.dose.noro <- lm(incubation ~ dose, data=noro.params.localmin)
 symponset.dose.pval.noro <- summary(lm.fit.symponset.dose.noro)$coefficients[2, 4]
 symponset.dose.pval.noro
 
-lm.fit.p2.peaktime.sars <- lm(peak_time/24 ~ p2, data=sars.excluding.unclear.peaks)
+lm.fit.p2.peaktime.sars <- lm(peakDay ~ p2, data=sars.params.clearpeaks)
 p2.peaktime.pval.sars <- summary(lm.fit.p2.peaktime.sars)$coefficients[2,4]
 p2.peaktime.pval.sars
 p2.peaktime.rsquared.sars <- summary(lm.fit.p2.peaktime.sars)$r.squared
 p2.peaktime.rsquared.sars
 
-lm.fit.p2.symponset.sars <- lm(incubation ~ p2, data=sars.excluding.unclear.peaks)
+lm.fit.p2.symponset.sars <- lm(incubation ~ p2, data=sars.params.clearpeaks)
 p2.symponset.pval.sars <- summary(lm.fit.p2.symponset.sars)$coefficients[2,4]
 p2.symponset.pval.sars
-```
-
-### Bootstrapping for confidence bounds
-We use bootstrapping to create 95% confidence bounds (n = 1000) for each 
-correlation we show in Figures 3, S5, and S6.
-```{r}
-iters <- 1000
-n_points <- 10
-
-noro.r.range <- seq(min(noro.excluding.unclear.peaks$p2),
-                    max(noro.excluding.unclear.peaks$p2),
-                    length=n_points)
-
-delay.conservative.projected_values.noro <- matrix(NA, nrow = iters, 
-                                                   ncol = n_points)
-colnames(delay.conservative.projected_values.noro) <- paste("r_", noro.r.range, sep="")
-
-delay.nonconservative.projected_values.noro <- matrix(NA, nrow = iters, 
-                                                   ncol = n_points)
-colnames(delay.nonconservative.projected_values.noro) <- paste("r_", noro.r.range, sep="")
-
-peakshedding.projected_values.noro <- matrix(NA, nrow = iters, ncol = n_points)
-
-colnames(peakshedding.projected_values.noro) <- paste("r_", noro.r.range, sep="")
-
-shedonset.projected_values.noro <- matrix(NA, nrow = iters, ncol = n_points)
-
-colnames(shedonset.projected_values.noro) <- paste("r_", noro.r.range, sep="")
-
-symponset.projected_values.noro <- matrix(NA, nrow = iters, ncol = n_points)
-
-colnames(symponset.projected_values.noro) <- paste("r_", noro.r.range, sep="")
-
-noro.presymp.dur.range <- seq(min(noro.measures
-                              [!is.na(noro.measures$presymp_transmission_avg),]$presymp_dur),
-                          max(noro.measures
-                              [!is.na(noro.measures$presymp_transmission_avg),]$presymp_dur),
-                          length=n_points)
-
-sars.r.range <- seq(min(sars.excluding.unclear.peaks$p2),
-                    max(sars.excluding.unclear.peaks$p2),
-                    length=n_points)
-
-delay.conservative.projected_values.sars <- matrix(NA, nrow = iters, ncol = n_points)
-
-colnames(delay.conservative.projected_values.sars) <- paste("r_", sars.r.range,
-                                                            sep="")
-
-delay.nonconservative.projected_values.sars <- matrix(NA, nrow = iters, ncol = n_points)
-
-colnames(delay.nonconservative.projected_values.sars) <- paste("r_", sars.r.range,
-                                                            sep="")
-
-peakshedding.projected_values.sars <- matrix(NA, nrow = iters, ncol = n_points)
-
-colnames(peakshedding.projected_values.sars) <- paste("r_", sars.r.range,
-                                                            sep="")
-
-shedonset.projected_values.sars <- matrix(NA, nrow = iters, ncol = n_points)
-
-colnames(shedonset.projected_values.sars) <- paste("r_", sars.r.range,
-                                                            sep="")
-
-symponset.projected_values.sars <- matrix(NA, nrow = iters, ncol = n_points)
-
-colnames(symponset.projected_values.sars) <- paste("r_", sars.r.range,
-                                                            sep="")
-
-sars.presymp.dur.range <- seq(min(sars.measures
-                              [!is.na(sars.measures$presymp_transmission_avg),]$presymp_dur),
-                          max(sars.measures
-                              [!is.na(sars.measures$presymp_transmission_avg),]$presymp_dur),
-                          length=n_points)
-
-presymp.shed.avg.projected_values.sars <- matrix(NA, nrow = iters, ncol = n_points)
-
-colnames(presymp.shed.avg.projected_values.sars) <- paste("presymp_dur_", sars.presymp.dur.range,
-                                                            sep="")
-                                                      
-
-for (i in 1:iters) {
-  
-  # Fig 3B: delay between symptom onset and peak viral shedding vs. viral 
-  # replication rate
-  delay.conservative.resamp.noro <- noro.excluding.unclear.peaks[
-    sample(1:nrow(noro.excluding.unclear.peaks), 
-                         size=nrow(noro.excluding.unclear.peaks),
-                         replace=T), c("delay_conservative", "p2")]
-  
-  delay.conservative.model.noro <- lm(delay_conservative ~ p2, data=delay.conservative.resamp.noro)
-  
-  delay.conservative.projected_values.noro[i, ] <- predict(delay.conservative.model.noro,
-                                                           newdata = data.frame(
-                                                             p2 = noro.r.range
-                                                           ))  
-  
-  delay.conservative.resamp.sars <- sars.excluding.unclear.peaks[
-    sample(1:nrow(sars.excluding.unclear.peaks), 
-                         size=nrow(sars.excluding.unclear.peaks),
-                         replace=T), c("delay_conservative", "p2")]
-  
-  delay.conservative.model.sars <- lm(delay_conservative ~ p2, data=delay.conservative.resamp.sars)
-  
-  delay.conservative.projected_values.sars[i, ] <- predict(delay.conservative.model.sars,
-                                                           newdata = data.frame(
-                                                             p2 = sars.r.range
-                                                           ))  
-   
-  # Fig S5B: delay between symptom onset and shedding onset vs. viral
-  # replication rate
-  delay.nonconservative.resamp.noro <- noro.excluding.unclear.peaks[
-    sample(1:nrow(noro.excluding.unclear.peaks),
-                         size=nrow(noro.excluding.unclear.peaks),
-                         replace=T), c("delay_nonconservative", "p2")]
-
-  delay.nonconservative.model.noro <- lm(delay_nonconservative ~ p2,
-                                         data=delay.nonconservative.resamp.noro)
-
-  delay.nonconservative.projected_values.noro[i, ] <- predict(delay.nonconservative.model.noro,
-                                                              newdata = data.frame(
-                                                                p2 = noro.r.range
-                                                              ))
-  
-  delay.nonconservative.resamp.sars <- sars.excluding.unclear.peaks[
-    sample(1:nrow(sars.excluding.unclear.peaks),
-                         size=nrow(sars.excluding.unclear.peaks),
-                         replace=T), c("delay_nonconservative", "p2")]
-
-  delay.nonconservative.model.sars <- lm(delay_nonconservative ~ p2,
-                                         data=delay.nonconservative.resamp.sars)
-
-  delay.nonconservative.projected_values.sars[i, ] <- predict(delay.nonconservative.model.sars,
-                                                              newdata = data.frame(
-                                                                p2 = sars.r.range
-                                                              ))
-
-  # Fig 3C: day of peak shedding vs. viral replication rate
-  peakshedding.resamp.noro <- noro.excluding.unclear.peaks[
-    sample(1:nrow(noro.excluding.unclear.peaks),
-                         size=nrow(noro.excluding.unclear.peaks),
-                         replace=T), c("peak_time", "p2")]
-
-  peakshedding.model.noro <- lm(peak_time ~ p2, data=peakshedding.resamp.noro)
-  
-  peakshedding.projected_values.noro[i, ] <- predict(peakshedding.model.noro,
-                                                     newdata = data.frame(
-                                                       p2 = noro.r.range
-                                                     ))
-  
-  peakshedding.resamp.sars <- sars.excluding.unclear.peaks[
-    sample(1:nrow(sars.excluding.unclear.peaks),
-                         size=nrow(sars.excluding.unclear.peaks),
-                         replace=T), c("peak_time", "p2")]
-
-  peakshedding.model.sars <- lm(peak_time ~ p2, data=peakshedding.resamp.sars)
-  
-  peakshedding.projected_values.sars[i, ] <- predict(peakshedding.model.sars,
-                                                     newdata = data.frame(
-                                                       p2 = sars.r.range
-                                                     ))
-  
-   # Fig S5C: shedding onset vs. viral replication rate
-  shedonset.resamp.noro <- noro.excluding.unclear.peaks[
-    sample(1:nrow(noro.excluding.unclear.peaks),
-                         size=nrow(noro.excluding.unclear.peaks),
-                         replace=T), c("shed_onset", "p2")]
-
-  shedonset.model.noro <- lm(shed_onset ~ p2, data=shedonset.resamp.noro)
-  
-  shedonset.projected_values.noro[i, ] <- predict(shedonset.model.noro,
-                                                     newdata = data.frame(
-                                                       p2 = noro.r.range
-                                                     ))
-  
-  shedonset.resamp.sars <- sars.excluding.unclear.peaks[
-    sample(1:nrow(sars.excluding.unclear.peaks),
-                         size=nrow(sars.excluding.unclear.peaks),
-                         replace=T), c("shed_onset", "p2")]
-
-  shedonset.model.sars <- lm(shed_onset ~ p2, data=shedonset.resamp.sars)
-  
-  shedonset.projected_values.sars[i, ] <- predict(shedonset.model.sars,
-                                                     newdata = data.frame(
-                                                       p2 = sars.r.range
-                                                     ))
- 
-  # Fig 3D: day of symptom onset vs. viral replication rate
-  symponset.resamp.noro <- noro.measures[sample(1:nrow(noro.excluding.unclear.peaks),
-                                                        size=nrow(noro.excluding.unclear.peaks),
-                                                        replace=T), c("incubation", "p2")]
-
-  symponset.model.noro <- lm(incubation ~ p2, data=symponset.resamp.noro)
-  
-  symponset.projected_values.noro[i, ] <- predict(symponset.model.noro,
-                                                  newdata = data.frame(
-                                                    p2 = noro.r.range
-                                                  ))
-  
-  symponset.resamp.sars <- sars.measures[sample(1:nrow(sars.excluding.unclear.peaks),
-                                                        size=nrow(sars.excluding.unclear.peaks),
-                                                        replace=T), c("incubation", "p2")]
-
-  symponset.model.sars <- lm(incubation ~ p2, data=symponset.resamp.sars)
-  
-  symponset.projected_values.sars[i, ] <- predict(symponset.model.sars,
-                                                  newdata = data.frame(
-                                                    p2 = sars.r.range
-                                                  ))
-}
-
-# Fig 3B
-lower.bound.delay.conservative.points.noro <- 
-  apply(delay.conservative.projected_values.noro,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.025))
-
-upper.bound.delay.conservative.points.noro <- 
-  apply(delay.conservative.projected_values.noro,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.975))
-
-lower.bound.delay.conservative.points.sars <- 
-  apply(delay.conservative.projected_values.sars,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.025))
-
-upper.bound.delay.conservative.points.sars <- 
-  apply(delay.conservative.projected_values.sars,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.975))
-
-# Fig S5B
-lower.bound.delay.nonconservative.points.noro <- 
-  apply(delay.nonconservative.projected_values.noro,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.025))
-
-upper.bound.delay.nonconservative.points.noro <- 
-  apply(delay.nonconservative.projected_values.noro,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.975))
-
-lower.bound.delay.nonconservative.points.sars <- 
-  apply(delay.nonconservative.projected_values.sars,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.025))
-
-upper.bound.delay.nonconservative.points.sars <- 
-  apply(delay.nonconservative.projected_values.sars,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.975))
-
-# Fig S5C
-lower.bound.shedonset.points.noro <- 
-  apply(shedonset.projected_values.noro,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.025))
-
-upper.bound.shedonset.points.noro <- 
-  apply(shedonset.projected_values.noro,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.975))
-
-lower.bound.shedonset.points.sars <- 
-  apply(shedonset.projected_values.sars,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.025))
-
-upper.bound.shedonset.points.sars <- 
-  apply(shedonset.projected_values.sars,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.975))
-
-# Fig 3C
-lower.bound.peakshedding.points.noro <- 
-  apply(peakshedding.projected_values.noro,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.025))
-
-upper.bound.peakshedding.points.noro <- 
-  apply(peakshedding.projected_values.noro,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.975))
-
-lower.bound.peakshedding.points.sars <- 
-  apply(peakshedding.projected_values.sars,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.025))
-
-upper.bound.peakshedding.points.sars <- 
-  apply(peakshedding.projected_values.sars,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.975))
-
-# Fig 3D
-lower.bound.symponset.points.noro <- 
-  apply(symponset.projected_values.noro,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.025))
-
-upper.bound.symponset.points.noro <- 
-  apply(symponset.projected_values.noro,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.975))
-
-lower.bound.symponset.points.sars <- 
-  apply(symponset.projected_values.sars,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.025))
-
-upper.bound.symponset.points.sars <- 
-  apply(symponset.projected_values.sars,
-        MARGIN = 2, FUN = function(c) quantile(c, 0.975))
-
 ```
 
 ### Plotting of analysis results
@@ -1650,7 +1462,11 @@ delay vs. viral replication rate, day of peak shedding vs. viral replication rat
 day of symptom onset vs. viral replication rate, and average viral shedding 
 prior to symptoms vs. duration of pre-symptomatic shedding in a 5-panel plot.
 ```{r, fig.height = 7.5, fig.width = 3.5}
-measures.combined <- rbind(noro.measures[, c(1:13)], sars.measures)
+measure.names <- c("ID", "incubation", "sheddingOnset", "repRate",
+                   "peakDay", "symptomsToPeakShedding", "symptomsToStartShedding",
+                   "avgSheddingBeforeSymptoms", "sheddingTimeBeforeSymptoms")
+measures.combined <- rbind(noro.params.localmin[colnames(noro.params.localmin) %in% measure.names], 
+                           sars.params.localmin[colnames(sars.params.localmin) %in% measure.names])
 measures.combined$pathogen <- ifelse(grepl('ID', measures.combined$ID), 
                                      'Norovirus', 'SARS-CoV-2')
 
@@ -1658,16 +1474,16 @@ cex <- 1.1
 cex_labels <- 0.7
 panellabelratio <- 0.975
 
-tiff("Pre-symptomatic transmission analysis test.tiff", res=500, height=6.5, width=3.5, unit="in")
+tiff("Pre-symptomatic transmission analysis.tiff", res=500, height=6.5, width=3.5, unit="in")
 
 par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
 
 # Panel A: Delay between symptom onset and peak viral shedding 
 {
-  ylim.ab <- c(floor(min(measures.combined$delay_conservative, na.rm=T))-1, 
-             ceiling(max(measures.combined$delay_conservative, na.rm=T))+1)
+  ylim.ab <- c(floor(min(measures.combined$symptomsTopeakDay, na.rm=T))-1, 
+             ceiling(max(measures.combined$symptomsTopeakDay, na.rm=T))+1)
   
-  plot(delay_conservative ~ jitter(ifelse(pathogen == 'Norovirus', 
+  plot(symptomsTopeakDay ~ jitter(ifelse(pathogen == 'Norovirus', 
                                         ifelse(dose == 4.8, .73,
                                                ifelse(dose == 48, 1.067, 
                                                       ifelse(dose == 4800, 1.4, 0))),
@@ -1676,10 +1492,10 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
      col=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
      xlim=c(.4, 2.6),
      ylim=ylim.ab, cex.axis=cex, cex=cex,
-     pch=ifelse(delay_conservative < 0 & pathogen == 'Norovirus', 17, 
-                ifelse(delay_conservative > 0 & pathogen == 'Norovirus', 2,
-                       ifelse(delay_conservative < 0 & pathogen == 'SARS-CoV-2', 23, 
-                              ifelse(delay_conservative > 0 & pathogen == 'SARS-CoV-2', 5,
+     pch=ifelse(symptomsTopeakDay < 0 & pathogen == 'Norovirus', 17, 
+                ifelse(symptomsTopeakDay > 0 & pathogen == 'Norovirus', 2,
+                       ifelse(symptomsTopeakDay < 0 & pathogen == 'SARS-CoV-2', 23, 
+                              ifelse(symptomsTopeakDay > 0 & pathogen == 'SARS-CoV-2', 5,
                                      9)))),
      bg=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
      yaxt="n",
@@ -1700,26 +1516,26 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
      las=2)
   
   #Average delays per pathogen
-  segments(0.63, mean(noro.measures[noro.measures$dose == 4.8,]$delay_conservative, 
+  segments(0.63, mean(noro.params.localmin[noro.params.localmin$dose == 4.8,]$symptomsTopeakDay, 
                       na.rm=T), 0.83,
-           mean(noro.measures[noro.measures$dose == 4.8,]$delay_conservative, 
+           mean(noro.params.localmin[noro.params.localmin$dose == 4.8,]$symptomsTopeakDay, 
                 na.rm=T), col=noro.color,
            lwd=cex)
   
-  segments(0.967, mean(noro.measures[noro.measures$dose == 48,]$delay_conservative, 
+  segments(0.967, mean(noro.params.localmin[noro.params.localmin$dose == 48,]$symptomsTopeakDay, 
                      na.rm=T), 1.167,
-           mean(noro.measures[noro.measures$dose == 48,]$delay_conservative, 
+           mean(noro.params.localmin[noro.params.localmin$dose == 48,]$symptomsTopeakDay, 
                 na.rm=T), col=noro.color,
            lwd=cex)
   
-  segments(1.3, mean(noro.measures[noro.measures$dose == 4800,]$delay_conservative, 
+  segments(1.3, mean(noro.params.localmin[noro.params.localmin$dose == 4800,]$symptomsTopeakDay, 
                      na.rm=T), 1.5,
-           mean(noro.measures[noro.measures$dose == 4800,]$delay_conservative, 
+           mean(noro.params.localmin[noro.params.localmin$dose == 4800,]$symptomsTopeakDay, 
                 na.rm=T), col=noro.color,
            lwd=cex)
   
-  segments(1.9, mean(sars.measures$delay_conservative, na.rm=T), 2.1,
-           mean(sars.measures$delay_conservative, na.rm=T), col=sars.color,
+  segments(1.9, mean(sars.params.localmin$symptomsTopeakDay, na.rm=T), 2.1,
+           mean(sars.params.localmin$symptomsTopeakDay, na.rm=T), col=sars.color,
            lwd=cex)
   
   #Pre-symptomatic vs post-symptomatic line
@@ -1738,12 +1554,12 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
               ceiling(max(measures.combined[!measures.combined$ID %in% 
                                               c(noro.unclearpeaks, sars.unclearpeaks),]$p2)) + 1)
   
-  plot(delay_conservative ~ p2, data=measures.combined, 
+  plot(symptomsTopeakDay ~ p2, data=measures.combined, 
    col=ifelse(pathogen == 'Norovirus', noro.color, sars.color),
-   pch=ifelse(delay_conservative < 0 & pathogen == 'Norovirus', 17, 
-                ifelse(delay_conservative > 0 & pathogen == 'Norovirus', 2,
-                       ifelse(delay_conservative < 0 & pathogen == 'SARS-CoV-2', 23, 
-                              ifelse(delay_conservative > 0 & pathogen == 'SARS-CoV-2', 5,
+   pch=ifelse(symptomsTopeakDay < 0 & pathogen == 'Norovirus', 17, 
+                ifelse(symptomsTopeakDay > 0 & pathogen == 'Norovirus', 2,
+                       ifelse(symptomsTopeakDay < 0 & pathogen == 'SARS-CoV-2', 23, 
+                              ifelse(symptomsTopeakDay > 0 & pathogen == 'SARS-CoV-2', 5,
                                      9)))),
    bg=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
    cex=cex, cex.axis=cex,
@@ -1763,23 +1579,18 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
      las=2)
   
   # Lines of best fit
-  noro.bpred <- data.frame(p2 = noro.r.range)
-  noro.bpred <- transform(noro.bpred, y_predicted = predict(lm.fit.p2.delay.conservative.noro, newdata=noro.bpred))
-  lines(y_predicted ~ p2, data=noro.bpred, col=noro.color)
-  
-  sars.bpred <- data.frame(p2 = sars.r.range)
-  sars.bpred <- transform(sars.bpred, y_predicted = predict(lm.fit.p2.delay.conservative.sars, newdata=sars.bpred))
-  lines(y_predicted ~ p2, data=sars.bpred, col=sars.color)
+  lines(sympToPeakDay ~ t, data=noroSummary, col=noro.color)
+
+  lines(sympToPeakDay ~ t, data=sarsSummary, col=sars.color)
   
   # Confidence bounds 
-  polygon(c(noro.r.range, rev(noro.r.range)), c(upper.bound.delay.conservative.points.noro,
-                                                rev(lower.bound.delay.conservative.points.noro)), 
+  polygon(c(noro.r.range, rev(noro.r.range)), c(noroSummary$sympToPeakDayUCI,
+                                                rev(noroSummary$sympToPeakDayLCI)), 
         col = rgb(135, 26, 110, alpha=100,
                 maxColorValue=255), border = NA)
   
-  
-  polygon(c(sars.r.range, rev(sars.r.range)), c(upper.bound.delay.conservative.points.sars, 
-                                                rev(lower.bound.delay.conservative.points.sars)), 
+  polygon(c(sars.r.range, rev(sars.r.range)), c(sarsSummary$sympToPeakDayUCI,
+                                                rev(sarsSummary$sympToPeakDayLCI)), 
         col=rgb(86, 179, 233, alpha=100,
                 maxColorValue=255), border = NA)
   
@@ -1799,20 +1610,20 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
 {
   ylim.c <- c(floor(min(measures.combined[!measures.combined$ID %in% 
                                               c(noro.unclearpeaks, sars.unclearpeaks),]
-                        $peak_time/24)) - 1, 
+                        $peakDay)) - 1, 
               ceiling(max(measures.combined[!measures.combined$ID %in% 
                                               c(noro.unclearpeaks, sars.unclearpeaks),]
-                            $peak_time/24)) + 1)
+                            $peakDay)) + 1)
   
-  plot(peak_time/24 ~ p2, data=measures.combined[!measures.combined$ID %in% 
+  plot(peakDay ~ p2, data=measures.combined[!measures.combined$ID %in% 
                                               c(noro.unclearpeaks, sars.unclearpeaks),],
      col=ifelse(pathogen == 'Norovirus', noro.color, sars.color),
      xlim=xlim.bcd,
      ylim=ylim.c, cex.axis=cex, cex=cex,
-     pch=ifelse(delay_conservative < 0 & pathogen == 'Norovirus', 17, 
-              ifelse(delay_conservative > 0 & pathogen == 'Norovirus', 2,
-                     ifelse(delay_conservative < 0 & pathogen == 'SARS-CoV-2', 23, 
-                            ifelse(delay_conservative > 0 & pathogen == 'SARS-CoV-2', 5,
+     pch=ifelse(symptomsTopeakDay < 0 & pathogen == 'Norovirus', 17, 
+              ifelse(symptomsTopeakDay > 0 & pathogen == 'Norovirus', 2,
+                     ifelse(symptomsTopeakDay < 0 & pathogen == 'SARS-CoV-2', 23, 
+                            ifelse(symptomsTopeakDay > 0 & pathogen == 'SARS-CoV-2', 5,
                                    9)))),
      bg=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
      xaxt="n", yaxt="n", ylab = "", xlab = "",
@@ -1825,22 +1636,18 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
   axis(2, at=seq(ylim.c[1],ylim.c[2], by=2), cex.axis=cex, mgp=c(0, 0.5, 0), tck=-0.04, las=2)
   
   # Lines of best fit
-  noro.cpred <- data.frame(p2 = noro.r.range)
-  noro.cpred <- transform(noro.cpred, y_predicted = predict(lm.fit.p2.peaktime.noro, newdata=noro.cpred))
-  lines(y_predicted ~ p2, data=noro.cpred, col=noro.color)
-  
-  sars.cpred <- data.frame(p2 = sars.r.range)
-  sars.cpred <- transform(sars.cpred, y_predicted = predict(lm.fit.p2.peaktime.sars, newdata=sars.cpred))
-  lines(y_predicted ~ p2, data=sars.cpred, col=sars.color)
+  lines(peakDay ~ t, data=noroSummary, col=noro.color)
+
+  lines(peakDay ~ t, data=sarsSummary, col=sars.color)
   
   # Confidence bounds 
-  polygon(c(noro.r.range, rev(noro.r.range)), c(upper.bound.peakshedding.points.noro/24,
-                                                rev(lower.bound.peakshedding.points.noro/24)), 
+  polygon(c(noro.r.range, rev(noro.r.range)), c(noroSummary$peakDayUCI,
+                                                rev(noroSummary$peakDayLCI)), 
         col=rgb(135, 26, 110, alpha=100,
                 maxColorValue=255), border = NA)
   
-  polygon(c(sars.r.range, rev(sars.r.range)), c(upper.bound.peakshedding.points.sars/24,
-                                                rev(lower.bound.peakshedding.points.sars/24)), 
+  polygon(c(sars.r.range, rev(sars.r.range)), c(sarsSummary$peakDayUCI,
+                                                rev(sarsSummary$peakDayLCI)), 
           col=rgb(86, 179, 233, alpha=100,
                 maxColorValue=255), border = NA)
   
@@ -1865,10 +1672,10 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
                                               c(noro.unclearpeaks, sars.unclearpeaks),],
        col=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
        xlim=xlim.bcd, ylim=ylim.d, cex.axis=cex, cex=cex,
-       pch=ifelse(delay_conservative < 0 & pathogen == 'Norovirus', 17, 
-                ifelse(delay_conservative > 0 & pathogen == 'Norovirus', 2,
-                       ifelse(delay_conservative < 0 & pathogen == 'SARS-CoV-2', 23, 
-                              ifelse(delay_conservative > 0 & pathogen == 'SARS-CoV-2', 5,
+       pch=ifelse(symptomsTopeakDay < 0 & pathogen == 'Norovirus', 17, 
+                ifelse(symptomsTopeakDay > 0 & pathogen == 'Norovirus', 2,
+                       ifelse(symptomsTopeakDay < 0 & pathogen == 'SARS-CoV-2', 23, 
+                              ifelse(symptomsTopeakDay > 0 & pathogen == 'SARS-CoV-2', 5,
                                      9)))),
        bg=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
        yaxt="n", xaxt="n", ylab = "", xlab = "", bty='l')
@@ -1881,22 +1688,18 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
   axis(2, at=seq(ylim.d[1], ylim.d[2], by=3), cex.axis=cex, mgp=c(0, 0.5, 0), tck=-0.04, las=2)
   
   # Lines of best fit
-  noro.dpred <- data.frame(p2 = noro.r.range)
-  noro.dpred <- transform(noro.dpred, y_predicted = predict(lm.fit.p2.symponset.noro, newdata=noro.dpred))
-  lines(y_predicted ~ p2, data=noro.dpred, col=noro.color)
-  
-  sars.dpred <- data.frame(p2 = sars.r.range)
-  sars.dpred <- transform(sars.dpred, y_predicted = predict(lm.fit.p2.symponset.sars, newdata=sars.dpred))
-  lines(y_predicted ~ p2, data=sars.dpred, col=sars.color)
+  lines(incubation ~ t, data=noroSummary, col=noro.color)
+
+  lines(incubatiion ~ t, data=sarsSummary, col=sars.color)
   
   # Confidence bounds 
-  polygon(c(noro.r.range, rev(noro.r.range)), c(upper.bound.symponset.points.noro,
-                                                rev(lower.bound.symponset.points.noro)), 
+  polygon(c(noro.r.range, rev(noro.r.range)), c(noroSummary$sympUCI,
+                                                rev(noroSummary$sympLCI)), 
           col = rgb(135, 26, 110, alpha=100,
                   maxColorValue=255), border = NA)
   
-  polygon(c(sars.r.range, rev(sars.r.range)), c(upper.bound.symponset.points.sars,
-                                                rev(lower.bound.symponset.points.sars)), 
+  polygon(c(sars.r.range, rev(sars.r.range)), c(sarsSummary$sympUCI,
+                                                rev(sarsSummary$sympLCI)), 
           col=rgb(86, 179, 233, alpha=100,
                   maxColorValue=255), border = NA)
   
@@ -1913,28 +1716,28 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
 
 {
   xrange <- c(floor(min(measures.combined[
-    !is.na(measures.combined$presymp_transmission_avg),]$presymp_dur,
+    !is.na(measures.combined$avgSheddingBeforeSymptoms),]$sheddingTimeBeforeSymptoms,
                 na.rm=T)) - 1,
             ceiling(max(measures.combined[
-    !is.na(measures.combined$presymp_transmission_avg),]$presymp_dur,
+    !is.na(measures.combined$avgSheddingBeforeSymptoms),]$sheddingTimeBeforeSymptoms,
                 na.rm=T)) + 1)
 
-  yrange <- c(floor(min(measures.combined$presymp_transmission_avg,
+  yrange <- c(floor(min(measures.combined$avgSheddingBeforeSymptoms,
                   na.rm=T)) - 1,
-              ceiling(max(measures.combined$presymp_transmission_avg,
+              ceiling(max(measures.combined$avgSheddingBeforeSymptoms,
                   na.rm=T)) + 1)
   
-  plot(presymp_transmission_avg ~ jitter(presymp_dur), 
+  plot(avgSheddingBeforeSymptoms ~ jitter(sheddingTimeBeforeSymptoms), 
        data=measures.combined,
        col=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
-       pch=ifelse(is.na(ifelse(delay_conservative < 0 & pathogen == 'Norovirus', 17, 
-              ifelse(delay_conservative > 0 & pathogen == 'Norovirus', 2,
-                     ifelse(delay_conservative < 0 & pathogen == 'SARS-CoV-2',
-                            23, 5)))) | delay_conservative == 0,
+       pch=ifelse(is.na(ifelse(symptomsTopeakDay < 0 & pathogen == 'Norovirus', 17, 
+              ifelse(symptomsTopeakDay > 0 & pathogen == 'Norovirus', 2,
+                     ifelse(symptomsTopeakDay < 0 & pathogen == 'SARS-CoV-2',
+                            23, 5)))) | symptomsTopeakDay == 0,
               9, 
-              ifelse(delay_conservative < 0 & pathogen == 'Norovirus', 17, 
-              ifelse(delay_conservative > 0 & pathogen == 'Norovirus', 2,
-                     ifelse(delay_conservative < 0 & pathogen == 'SARS-CoV-2',
+              ifelse(symptomsTopeakDay < 0 & pathogen == 'Norovirus', 17, 
+              ifelse(symptomsTopeakDay > 0 & pathogen == 'Norovirus', 2,
+                     ifelse(symptomsTopeakDay < 0 & pathogen == 'SARS-CoV-2',
                             23, 5)))),
        bg=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
        ylim=yrange,
@@ -1960,18 +1763,18 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
   
   mtext(text="Average viral shedding \n prior to symptom onset",
         side=2, line=3, cex=cex_labels)
-  mtext(text="Duration of pre-symptomatic transmission (days)", side=1, line=1.5, cex=cex_labels)
+  mtext(text="Duration of shedding prior to symptom onset (days)", side=1, line=1.5, cex=cex_labels)
   
   # Lines of best fit
-  noro.pred <- data.frame(presymp_dur= noro.presymp.dur.range)
-  noro.pred <- transform(noro.pred, y_predicted = predict(transmission.presymp.avg.fit.noro, 
-                                                          newdata=noro.pred))
-  lines(y_predicted ~ presymp_dur, data=noro.pred, col=noro.color)
+  noro.epred <- data.frame(sheddingTimeBeforeSymptoms= noro.presymp.dur.range)
+  noro.epred <- transform(noro.pred, y_predicted = predict(transmission.presymp.avg.fit.noro, 
+                                                          newdata=noro.epred))
+  lines(y_predicted ~ sheddingTimeBeforeSymptoms, data=noro.epred, col=noro.color)
 
-  sars.pred <- data.frame(presymp_dur = sars.presymp.dur.range)
-  sars.pred <- transform(sars.pred, y_predicted = predict(transmission.presymp.avg.fit.sars, 
-                                                           newdata=sars.pred))
-  lines(y_predicted ~ presymp_dur, data=sars.pred, col=sars.color)
+  sars.epred <- data.frame(sheddingTimeBeforeSymptoms = sars.presymp.dur.range)
+  sars.epred <- transform(sars.pred, y_predicted = predict(transmission.presymp.avg.fit.sars, 
+                                                           newdata=sars.epred))
+  lines(y_predicted ~ sheddingTimeBeforeSymptoms, data=sars.epred, col=sars.color)
   
   text(panellabelratio * (xrange[2] - xrange[1]) + xrange[1], 
        panellabelratio * (yrange[2] - yrange[1]) + yrange[1], 
@@ -1993,11 +1796,11 @@ par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
 # Panel A: Delay between symptom onset and shedding onset
 {  
   ylim.ab <- c(floor(min(measures.combined[
-    !measures.combined$ID %in% c(noro.unclearpeaks, sars.unclearpeaks),]$delay_nonconservative, na.rm=T))-1, 
+    !measures.combined$ID %in% c(noro.unclearpeaks, sars.unclearpeaks),]$symptomsToStartShedding, na.rm=T))-1, 
                ceiling(max(measures.combined[
-    !measures.combined$ID %in% c(noro.unclearpeaks, sars.unclearpeaks),]$delay_nonconservative, na.rm=T))+1)
+    !measures.combined$ID %in% c(noro.unclearpeaks, sars.unclearpeaks),]$symptomsToStartShedding, na.rm=T))+1)
   
-  plot(delay_nonconservative ~ jitter(ifelse(pathogen == 'Norovirus', 
+  plot(symptomsToStartShedding ~ jitter(ifelse(pathogen == 'Norovirus', 
                                         ifelse(dose == 4.8, .73,
                                                ifelse(dose == 48, 1.067, 1.4)),
                                    2), 1.5), 
@@ -2005,10 +1808,10 @@ par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
        col=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
        xlim=c(.4, 2.6),
        ylim=ylim.ab, cex.axis=cex, cex=cex,
-       pch=ifelse(delay_nonconservative < 0 & pathogen == 'Norovirus', 17, 
-                  ifelse(delay_nonconservative > 0 & pathogen == 'Norovirus', 2,
-                         ifelse(delay_nonconservative < 0 & pathogen == 'SARS-CoV-2', 23, 
-                                ifelse(delay_nonconservative > 0 & pathogen == 'SARS-CoV-2', 5,
+       pch=ifelse(symptomsToStartShedding < 0 & pathogen == 'Norovirus', 17, 
+                  ifelse(symptomsToStartShedding > 0 & pathogen == 'Norovirus', 2,
+                         ifelse(symptomsToStartShedding < 0 & pathogen == 'SARS-CoV-2', 23, 
+                                ifelse(symptomsToStartShedding > 0 & pathogen == 'SARS-CoV-2', 5,
                                        9)))),
        bg=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
        yaxt="n",
@@ -2029,42 +1832,42 @@ par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
        las=2)
   
   #Average delays per pathogen
-  segments(0.3, mean(noro.measures[noro.measures$dose == .48 & 
-                                     !noro.measures$ID %in% noro.unclearpeaks,]$delay_nonconservative, 
+  segments(0.3, mean(noro.params.localmin[noro.params.localmin$dose == .48 & 
+                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
                       na.rm=T), 0.5,
-           mean(noro.measures[noro.measures$dose == .48 & 
-                                     !noro.measures$ID %in% noro.unclearpeaks,]$delay_nonconservative, 
+           mean(noro.params.localmin[noro.params.localmin$dose == .48 & 
+                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
                 na.rm=T), col=noro.color,
            lwd=cex)
   
-  segments(0.63, mean(noro.measures[noro.measures$dose == 4.8 & 
-                                     !noro.measures$ID %in% noro.unclearpeaks,]$delay_nonconservative, 
+  segments(0.63, mean(noro.params.localmin[noro.params.localmin$dose == 4.8 & 
+                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
                       na.rm=T), 0.83,
-           mean(noro.measures[noro.measures$dose == 4.8 & 
-                                     !noro.measures$ID %in% noro.unclearpeaks,]$delay_nonconservative, 
+           mean(noro.params.localmin[noro.params.localmin$dose == 4.8 & 
+                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
                 na.rm=T), col=noro.color,
            lwd=cex)
   
-  segments(0.967, mean(noro.measures[noro.measures$dose == 48 & 
-                                     !noro.measures$ID %in% noro.unclearpeaks,]$delay_nonconservative, 
+  segments(0.967, mean(noro.params.localmin[noro.params.localmin$dose == 48 & 
+                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
                      na.rm=T), 1.167,
-           mean(noro.measures[noro.measures$dose == 48 & 
-                                     !noro.measures$ID %in% noro.unclearpeaks,]$delay_nonconservative, 
+           mean(noro.params.localmin[noro.params.localmin$dose == 48 & 
+                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
                 na.rm=T), col=noro.color,
            lwd=cex)
   
-  segments(1.3, mean(noro.measures[noro.measures$dose == 4800 & 
-                                     !noro.measures$ID %in% noro.unclearpeaks,]$delay_nonconservative, 
+  segments(1.3, mean(noro.params.localmin[noro.params.localmin$dose == 4800 & 
+                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
                      na.rm=T), 1.5,
-           mean(noro.measures[noro.measures$dose == 4800 & 
-                                     !noro.measures$ID %in% noro.unclearpeaks,]$delay_nonconservative, 
+           mean(noro.params.localmin[noro.params.localmin$dose == 4800 & 
+                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
                 na.rm=T), col=noro.color,
            lwd=cex)
   
-  segments(1.9, mean(sars.measures[!sars.measures$ID %in% sars.unclearpeaks,]
-                     $delay_nonconservative, na.rm=T), 2.1,
-           mean(sars.measures[!sars.measures$ID %in% sars.unclearpeaks,]
-                $delay_nonconservative, na.rm=T), col=sars.color,
+  segments(1.9, mean(sars.params.localmin[!sars.params.localmin$ID %in% sars.unclearpeaks,]
+                     $symptomsToStartShedding, na.rm=T), 2.1,
+           mean(sars.params.localmin[!sars.params.localmin$ID %in% sars.unclearpeaks,]
+                $symptomsToStartShedding, na.rm=T), col=sars.color,
            lwd=cex)
 
   #Pre-symptomatic vs post-symptomatic line
@@ -2083,13 +1886,13 @@ par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
               ceiling(max(measures.combined[!measures.combined$ID %in% 
                                               c(noro.unclearpeaks, sars.unclearpeaks),]$p2)) + 1)
     
-  plot(delay_nonconservative ~ p2, data=measures.combined[!measures.combined$ID %in% 
+  plot(symptomsToStartShedding ~ p2, data=measures.combined[!measures.combined$ID %in% 
                                               c(noro.unclearpeaks, sars.unclearpeaks),], 
      col=ifelse(pathogen == 'Norovirus', noro.color, sars.color),
-     pch=ifelse(delay_nonconservative < 0 & pathogen == 'Norovirus', 17, 
-                  ifelse(delay_nonconservative > 0 & pathogen == 'Norovirus', 2,
-                         ifelse(delay_nonconservative < 0 & pathogen == 'SARS-CoV-2', 23, 
-                                ifelse(delay_nonconservative > 0 & pathogen == 'SARS-CoV-2', 5,
+     pch=ifelse(symptomsToStartShedding < 0 & pathogen == 'Norovirus', 17, 
+                  ifelse(symptomsToStartShedding > 0 & pathogen == 'Norovirus', 2,
+                         ifelse(symptomsToStartShedding < 0 & pathogen == 'SARS-CoV-2', 23, 
+                                ifelse(symptomsToStartShedding > 0 & pathogen == 'SARS-CoV-2', 5,
                                        9)))),
      bg=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
      cex=cex, cex.axis=cex,
@@ -2109,22 +1912,18 @@ par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
        las=2)
   
   # Lines of best fit
-  noro.bpred <- data.frame(p2 = noro.r.range)
-  noro.bpred <- transform(noro.bpred, y_predicted = predict(lm.fit.p2.delay.nonconservative.noro, newdata=noro.bpred))
-  lines(y_predicted ~ p2, data=noro.bpred, col=noro.color)
-  
-  sars.bpred <- data.frame(p2 = sars.r.range)
-  sars.bpred <- transform(sars.bpred, y_predicted = predict(lm.fit.p2.delay.nonconservative.sars, newdata=sars.bpred))
-  lines(y_predicted ~ p2, data=sars.bpred, col=sars.color)
+  lines(sympToShed ~ t, data=noroSummary, col=noro.color)
+
+  lines(sympToShed ~ t, data=sarsSummary, col=sars.color)
   
   # Confidence bounds 
-  polygon(c(noro.r.range, rev(noro.r.range)), c(upper.bound.delay.nonconservative.points.noro, 
-                                                rev(lower.bound.delay.nonconservative.points.noro)), 
+  polygon(c(noro.r.range, rev(noro.r.range)), c(noroSummary$sympToShedUCI, 
+                                                rev(noroSummary$sympToShedLCI)), 
           col = rgb(135, 26, 110, alpha=100,
                   maxColorValue=255), border = NA)
   
-  polygon(c(sars.r.range, rev(sars.r.range)), c(upper.bound.delay.nonconservative.points.sars, 
-                                                rev(lower.bound.delay.nonconservative.points.sars)), 
+  polygon(c(sars.r.range, rev(sars.r.range)), c(sarsSummary$sympToShedUCI, 
+                                                rev(sarsSummary$sympToShedLCI)), 
           col=rgb(86, 179, 233, alpha=100,
                   maxColorValue=255), border = NA)
   
@@ -2143,20 +1942,20 @@ par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
 {
   ylim.c <- c(floor(min(measures.combined[!measures.combined$ID %in% 
                                               c(noro.unclearpeaks, sars.unclearpeaks),]
-                        $shed_onset)) - 1, 
+                        $sheddingOnset)) - 1, 
               ceiling(max(measures.combined[!measures.combined$ID %in% 
                                               c(noro.unclearpeaks, sars.unclearpeaks),]
-                            $shed_onset)) + 1)
+                            $sheddingOnset)) + 1)
   
-  plot(shed_onset ~ p2, data=measures.combined[!measures.combined$ID %in% 
+  plot(sheddingOnset ~ p2, data=measures.combined[!measures.combined$ID %in% 
                                               c(noro.unclearpeaks, sars.unclearpeaks),],
      col=ifelse(pathogen == 'Norovirus', noro.color, sars.color),
      xlim=xlim.bcd,
      ylim=ylim.c, cex.axis=cex, cex=cex,
-     pch=ifelse(delay_nonconservative < 0 & pathogen == 'Norovirus', 17, 
-              ifelse(delay_nonconservative > 0 & pathogen == 'Norovirus', 2,
-                     ifelse(delay_nonconservative < 0 & pathogen == 'SARS-CoV-2', 23, 
-                            ifelse(delay_nonconservative > 0 & pathogen == 'SARS-CoV-2', 5,
+     pch=ifelse(symptomsToStartShedding < 0 & pathogen == 'Norovirus', 17, 
+              ifelse(symptomsToStartShedding > 0 & pathogen == 'Norovirus', 2,
+                     ifelse(symptomsToStartShedding < 0 & pathogen == 'SARS-CoV-2', 23, 
+                            ifelse(symptomsToStartShedding > 0 & pathogen == 'SARS-CoV-2', 5,
                                    9)))),
      bg=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
      xaxt="n", yaxt="n", ylab = "", xlab = "",
@@ -2169,22 +1968,18 @@ par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
   axis(2, at=seq(ylim.c[1],ylim.c[2], by=2), cex.axis=cex, mgp=c(0, 0.5, 0), tck=-0.04, las=2)
   
   # Lines of best fit
-  noro.cpred <- data.frame(p2 = noro.r.range)
-  noro.cpred <- transform(noro.cpred, y_predicted = predict(lm.fit.p2.shedonset.noro, newdata=noro.cpred))
-  lines(y_predicted ~ p2, data=noro.cpred, col=noro.color)
-  
-  sars.cpred <- data.frame(p2 = sars.r.range)
-  sars.cpred <- transform(sars.cpred, y_predicted = predict(lm.fit.p2.shedonset.sars, newdata=sars.cpred))
-  lines(y_predicted ~ p2, data=sars.cpred, col=sars.color)
+  lines(shedding ~ t, data=noroSummary, col=noro.color)
+
+  lines(shedding ~ t, data=sarsSummary, col=sars.color)
   
   # Confidence bounds 
-  polygon(c(noro.r.range, rev(noro.r.range)), c(upper.bound.shedonset.points.noro,
-                                                rev(lower.bound.shedonset.points.noro)), 
+  polygon(c(noro.r.range, rev(noro.r.range)), c(noroSummary$sheddingUCI,
+                                                rev(noroSummary$sheddingLCI)), 
         col=rgb(135, 26, 110, alpha=100,
                 maxColorValue=255), border = NA)
   
-  polygon(c(sars.r.range, rev(sars.r.range)), c(upper.bound.shedonset.points.sars,
-                                                rev(lower.bound.shedonset.points.sars)), 
+  polygon(c(sars.r.range, rev(sars.r.range)), c(sarsSummary$sheddingUCI,
+                                                rev(sarsSummary$sheddingLCI)), 
           col=rgb(86, 179, 233, alpha=100,
                 maxColorValue=255), border = NA)
   
@@ -2209,10 +2004,10 @@ par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
                                               c(noro.unclearpeaks, sars.unclearpeaks),],
        col=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
        xlim=xlim.bcd, ylim=ylim.d, cex.axis=cex, cex=cex,
-       pch=ifelse(delay_conservative < 0 & pathogen == 'Norovirus', 17, 
-                ifelse(delay_conservative > 0 & pathogen == 'Norovirus', 2,
-                       ifelse(delay_conservative < 0 & pathogen == 'SARS-CoV-2', 23, 
-                              ifelse(delay_conservative > 0 & pathogen == 'SARS-CoV-2', 5,
+       pch=ifelse(symptomsTopeakDay < 0 & pathogen == 'Norovirus', 17, 
+                ifelse(symptomsTopeakDay > 0 & pathogen == 'Norovirus', 2,
+                       ifelse(symptomsTopeakDay < 0 & pathogen == 'SARS-CoV-2', 23, 
+                              ifelse(symptomsTopeakDay > 0 & pathogen == 'SARS-CoV-2', 5,
                                      9)))),
        bg=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
        yaxt="n", xaxt="n", ylab = "", xlab = "", bty='l')
@@ -2225,22 +2020,18 @@ par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
   axis(2, at=seq(ylim.d[1], ylim.d[2], by=3), cex.axis=cex, mgp=c(0, 0.5, 0), tck=-0.04, las=2)
   
   # Lines of best fit
-  noro.dpred <- data.frame(p2 = noro.r.range)
-  noro.dpred <- transform(noro.dpred, y_predicted = predict(lm.fit.p2.symponset.noro, newdata=noro.dpred))
-  lines(y_predicted ~ p2, data=noro.dpred, col=noro.color)
-  
-  sars.dpred <- data.frame(p2 = sars.r.range)
-  sars.dpred <- transform(sars.dpred, y_predicted = predict(lm.fit.p2.symponset.sars, newdata=sars.dpred))
-  lines(y_predicted ~ p2, data=sars.dpred, col=sars.color)
+  lines(symp ~ t, data=noroSummary, col=noro.color)
+
+  lines(symp ~ t, data=sarsSummary, col=sars.color)
   
   # Confidence bounds 
-  polygon(c(noro.r.range, rev(noro.r.range)), c(upper.bound.symponset.points.noro,
-                                                rev(lower.bound.symponset.points.noro)), 
+  polygon(c(noro.r.range, rev(noro.r.range)), c(noroSummary$sympUCI,
+                                                rev(noroSummary$sympLCI)), 
           col = rgb(135, 26, 110, alpha=100,
                   maxColorValue=255), border = NA)
   
-  polygon(c(sars.r.range, rev(sars.r.range)), c(upper.bound.symponset.points.sars,
-                                                rev(lower.bound.symponset.points.sars)), 
+  polygon(c(sars.r.range, rev(sars.r.range)), c(sarsSummary$sympUCI,
+                                                rev(sarsSummary$sympLCI)), 
           col=rgb(86, 179, 233, alpha=100,
                   maxColorValue=255), border = NA)
   
@@ -2267,20 +2058,20 @@ cex <- 0.9
 par(oma=c(0.5, 1, 0, 0))
 {
   xrange <- c(0,
-            ceiling(max(noro.measures[!is.na(noro.measures$presymp_transmission_avg_totalshedding),]$
-                          presymp_dur,
+            ceiling(max(noro.params.localmin[!is.na(noro.params.localmin$avgSheddingBeforeSymptoms_totalshedding),]$
+                          sheddingTimeBeforeSymptoms,
                 na.rm=T)))
 
-  yrange <- c(floor(min(noro.measures$presymp_transmission_avg_totalshedding,
+  yrange <- c(floor(min(noro.params.localmin$avgSheddingBeforeSymptoms_totalshedding,
                   na.rm=T)) - 1,
-              ceiling(max(noro.measures$presymp_transmission_avg_totalshedding,
+              ceiling(max(noro.params.localmin$avgSheddingBeforeSymptoms_totalshedding,
                   na.rm=T)) + 1)
 
-  plot(presymp_transmission_avg_totalshedding ~ jitter(presymp_dur),
-       data=noro.measures,
+  plot(avgSheddingBeforeSymptoms_totalshedding ~ jitter(sheddingTimeBeforeSymptoms),
+       data=noro.params.localmin,
        col=noro.color,
-       pch=ifelse(is.na(delay_conservative)| delay_conservative == 0, 9, 
-                  ifelse(delay_conservative < 0, 17, 2)),
+       pch=ifelse(is.na(symptomsTopeakDay)| symptomsTopeakDay == 0, 9, 
+                  ifelse(symptomsTopeakDay < 0, 17, 2)),
        ylim=yrange,
        xlim=xrange,
        cex.axis=cex, cex=cex,
@@ -2301,10 +2092,10 @@ par(oma=c(0.5, 1, 0, 0))
   mtext(text="Duration of pre-symptomatic\ntransmission (days)", side=1, line=2.5, cex=cex_labels)
 
   # Lines of best fit
-  noro.pred <- data.frame(presymp_dur= noro.presymp.dur.range)
+  noro.pred <- data.frame(sheddingTimeBeforeSymptoms= noro.presymp.dur.range)
   noro.pred <- transform(noro.pred, y_predicted = predict(transmission.presymp.avg.totalshedding.fit.noro,
                                                           newdata=noro.pred))
-  lines(y_predicted ~ presymp_dur, data=noro.pred, col=noro.color)
+  lines(y_predicted ~ sheddingTimeBeforeSymptoms, data=noro.pred, col=noro.color)
 }
 
 dev.off()
@@ -2368,10 +2159,10 @@ par(mfrow=c(3, 1), oma=c(4, 3, 0.5, 0), mai=c(0.2, 0.3, 0.2, 0))
 
 {
  
-  ylim <- c(floor(min(noro.excluding.unclear.peaks$peak_time/24)) - 1,
-              ceiling(max(noro.excluding.unclear.peaks$peak_time/24)) + 1)
+  ylim <- c(floor(min(noro.excluding.unclear.peaks$peakDay)) - 1,
+              ceiling(max(noro.excluding.unclear.peaks$peakDay)) + 1)
 
-  plot(peak_time/24 ~ jitter(ifelse(dose == 4.8, .73,
+  plot(peakDay ~ jitter(ifelse(dose == 4.8, .73,
                         ifelse(dose == 48, 1.067, 
                           ifelse(dose == 4800, 1.4, 0)))), 
      data=noro.excluding.unclear.peaks,
@@ -2383,19 +2174,19 @@ par(mfrow=c(3, 1), oma=c(4, 3, 0.5, 0), mai=c(0.2, 0.3, 0.2, 0))
   axis(1, at=c(.73, 1.067, 1.4), labels = c(4.8, 48, 4800), mgp=c(0, 0.75, 0),
        tck=-0.04, cex.axis=cex)
    segments(.65,
-           mean(noro.excluding.unclear.peaks[noro.excluding.unclear.peaks$dose == 4.8,]$peak_time/24),
+           mean(noro.excluding.unclear.peaks[noro.excluding.unclear.peaks$dose == 4.8,]$peakDay),
            .81, 
-           mean(noro.excluding.unclear.peaks[noro.excluding.unclear.peaks$dose == 4.8,]$peak_time/24),
+           mean(noro.excluding.unclear.peaks[noro.excluding.unclear.peaks$dose == 4.8,]$peakDay),
            col=noro.color)
   segments(.987,
-           mean(noro.excluding.unclear.peaks[noro.excluding.unclear.peaks$dose == 48,]$peak_time/24),
+           mean(noro.excluding.unclear.peaks[noro.excluding.unclear.peaks$dose == 48,]$peakDay),
            1.147, 
-           mean(noro.excluding.unclear.peaks[noro.excluding.unclear.peaks$dose == 48,]$peak_time/24),
+           mean(noro.excluding.unclear.peaks[noro.excluding.unclear.peaks$dose == 48,]$peakDay),
            col=noro.color)
   segments(1.32,
-           mean(noro.excluding.unclear.peaks[noro.excluding.unclear.peaks$dose == 4800,]$peak_time/24), 
+           mean(noro.excluding.unclear.peaks[noro.excluding.unclear.peaks$dose == 4800,]$peakDay), 
            1.48, 
-           mean(noro.excluding.unclear.peaks[noro.excluding.unclear.peaks$dose == 4800,]$peak_time/24),
+           mean(noro.excluding.unclear.peaks[noro.excluding.unclear.peaks$dose == 4800,]$peakDay),
            col=noro.color)
   mtext(text="Day of peak shedding", side=2, line=3.5, cex=cex_labels)
   
@@ -2406,12 +2197,12 @@ par(mfrow=c(3, 1), oma=c(4, 3, 0.5, 0), mai=c(0.2, 0.3, 0.2, 0))
 {
  
   ylim <- c(0,
-              ceiling(max(noro.measures$incubation)) + 1)
+              ceiling(max(noro.params.localmin$incubation)) + 1)
 
   plot(incubation ~ jitter(ifelse(dose == 4.8, .73,
                         ifelse(dose == 48, 1.067, 
                           ifelse(dose == 4800, 1.4, 0)))), 
-     data=noro.measures,
+     data=noro.params.localmin,
      bty='n', ylab="",
      xlab="", col=noro.color,
      xaxt='n', ylim=ylim, yaxt='n',
@@ -2422,19 +2213,19 @@ par(mfrow=c(3, 1), oma=c(4, 3, 0.5, 0), mai=c(0.2, 0.3, 0.2, 0))
        tck=-0.04, cex.axis=cex)
   
      segments(.65,
-           mean(noro.measures[noro.measures$dose == 4.8,]$incubation), 
+           mean(noro.params.localmin[noro.params.localmin$dose == 4.8,]$incubation), 
            .81, 
-           mean(noro.measures[noro.measures$dose == 4.8,]$incubation),
+           mean(noro.params.localmin[noro.params.localmin$dose == 4.8,]$incubation),
            col=noro.color)
      segments(.987,
-           mean(noro.measures[noro.measures$dose == 48,]$incubation), 
+           mean(noro.params.localmin[noro.params.localmin$dose == 48,]$incubation), 
            1.147, 
-           mean(noro.measures[noro.measures$dose == 48,]$incubation),
+           mean(noro.params.localmin[noro.params.localmin$dose == 48,]$incubation),
            col=noro.color)
   segments(1.32,
-           mean(noro.measures[noro.measures$dose == 4800,]$incubation), 
+           mean(noro.params.localmin[noro.params.localmin$dose == 4800,]$incubation), 
            1.48, 
-           mean(noro.measures[noro.measures$dose == 4800,]$incubation),
+           mean(noro.params.localmin[noro.params.localmin$dose == 4800,]$incubation),
            col=noro.color)
   mtext(text="Day of symptom onset", side=2, line=3.5, cex=cex_labels)
   mtext(text="Infectious dose\n(norovirus, RT-PCR units)", side=1, line=3.5,
@@ -2476,7 +2267,7 @@ geIDs <- do.call(rbind,
 ID_dict_noro <- merge(atmarIDs, geIDs, by=c("dose", "peak", "symptom.type"))
 
 combinedNoroData <- merge(ID_dict_noro[, c("atmarID", "geID", "incubation")], 
-                          noro.measures[, c("ID", "incubation", "peak_time")], 
+                          noro.params.localmin[, c("ID", "incubation", "peakDay")], 
                           by.x = 'geID', by.y='ID')
 colnames(combinedNoroData) <- c('geID', 'atmarID', 'atmarIncubation', 'geIncubation',
                                 'peaktime')
@@ -2485,13 +2276,13 @@ colnames(combinedNoroData) <- c('geID', 'atmarID', 'atmarIncubation', 'geIncubat
 # their symptoms do not match up between the two datasets
 combinedNoroData <- rbind(combinedNoroData, 
                           data.frame(geID = 'ID10', atmarID='720', 
-                                     geIncubation = noro.measures[
-                                       noro.measures$ID == 'ID10',]$incubation,
+                                     geIncubation = noro.params.localmin[
+                                       noro.params.localmin$ID == 'ID10',]$incubation,
                                      atmarIncubation = atmarIDs[
                                        (atmarIDs$atmarID == '720') & 
                                          (!is.na(atmarIDs$atmarID)),]$incubation,
-                                     peaktime = noro.measures[
-                                       noro.measures$ID == 'ID10',]$peak_time))
+                                     peaktime = noro.params.localmin[
+                                       noro.params.localmin$ID == 'ID10',]$peakDay))
 
 # Manual ordering of IDs
 combinedNoroData <- combinedNoroData[c(1, 7, 8, 9, 10, 11, 12, 13, 14, 2, 3, 4, 5, 6),]
