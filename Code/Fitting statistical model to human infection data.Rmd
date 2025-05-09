@@ -291,17 +291,10 @@ generate.fits <- function(data, numguess, detect.threshold, detect.threshold.2 =
   return(fits)
 }
 
-params.minsse <- function(fits) {
-  
-  minsse <- min(fits$sse)
-  pars <- unlist((fits[fits$sse == minsse, ]))
-  return(pars)
-}
-
 fits.minsse <- function(fits) {
   
   minsse <- min(fits$sse)
-  pars <- unlist((fits[fits$sse == minsse, ]))
+  pars <- unlist((fits[fits$sse == minsse, ])[1,])
   return(pars)
 }
  
@@ -382,22 +375,6 @@ all.fits <- function(data, maxt, numguess, detect.threshold, detect.threshold.2 
                                                     detect.threshold.2)))
   
   return(participantfits)
-}
-
-participant.params.minsse <- function(fits) {
-  
-  participants <- unique(fits$ID)
-  
-  participantparams <- data.frame(do.call(rbind, 
-                               lapply(participants, 
-                                      function(x) params.minsse(fits[fits$ID == x,]))))
-  
-  colnames(participantparams) <- c("ID", "p1", "p2",
-                               "p3", "p4")
-  
-  participantparams[, 2:5] <- apply(participantparams[, 2:5], 2, as.numeric)
-  
-  return(participantparams)
 }
 
 participant.fits.minsse <- function(fits) {
@@ -908,7 +885,7 @@ noro.fits.localmin$incubation <- rep(noro.IncubData$incubation, each = numFits)
 noro.fits.localmin$sheddingOnset <- rep(unlist(lapply(noroParticipants, 
                                                      function(x) 
   shed.onset(noro.FShedData[noro.FShedData$ID == x, ]))), each = numFits)
-noro.fits.localmin$repRate <- exp(noro.fits.localmin$p2)
+noro.fits.localmin$repRate <- log10(exp(noro.fits.localmin$p2))
 noro.fits.localmin$peakDay <- exp(noro.fits.localmin$p3)/24
 noro.fits.localmin$symptomsToPeakDay <- noro.fits.localmin$peakDay -
   noro.fits.localmin$incubation
@@ -921,7 +898,7 @@ sars.fits.localmin$incubation <- rep(sars.IncubData$incubation, each = numFits)
 sars.fits.localmin$sheddingOnset <- rep(unlist(lapply(sarsParticipants, 
                                                      function(x) 
   shed.onset(sars.TShedData[sars.TShedData$ID == x, ]))), each = numFits)
-sars.fits.localmin$repRate <- exp(sars.fits.localmin$p2)
+sars.fits.localmin$repRate <- log10(exp(sars.fits.localmin$p2))
 sars.fits.localmin$peakDay <- exp(sars.fits.localmin$p3)/24
 sars.fits.localmin$symptomsToPeakDay <- sars.fits.localmin$peakDay -
   sars.fits.localmin$incubation
@@ -958,12 +935,12 @@ the linear regressions we show in Figures 3 and S6.
 iters <- 1000
 n_points <- 10
 
-noro.r.range <- seq(log10(exp(min(noro.params.clearpeaks$p2))),
-                    log10(exp(max(noro.params.clearpeaks$p2))),
+noro.r.range <- seq(min(noro.params.clearpeaks$repRate),
+                    max(noro.params.clearpeaks$repRate),
                     length=n_points)
 
-sars.r.range <- seq(log10(exp(min(sars.params.clearpeaks$p2))),
-                    log10(exp(max(sars.params.clearpeaks$p2))),
+sars.r.range <- seq(min(sars.params.clearpeaks$repRate),
+                    max(sars.params.clearpeaks$repRate),
                     length=n_points)
 
 noroSummary <- data.frame(t = noro.r.range,
@@ -1560,12 +1537,13 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
 # growth rate
 
 {
-  xlim.bcd <- c(floor(min(log10(measures.combined[!measures.combined$ID %in% 
-                                              c(noro.unclearpeaks, sars.unclearpeaks),]$repRate))) - 1,
-              ceiling(max(log10(measures.combined[!measures.combined$ID %in% 
-                                              c(noro.unclearpeaks, sars.unclearpeaks),]$repRate))) + 1)
+  xlim.bcd <- c(floor(min(measures.combined[!measures.combined$ID %in% 
+                                              c(noro.unclearpeaks, sars.unclearpeaks),]$repRate)) - 1,
+              ceiling(max(measures.combined[!measures.combined$ID %in% 
+                                              c(noro.unclearpeaks, sars.unclearpeaks),]$repRate)) + 1)
   
-  plot(symptomsToPeakDay ~ log10(repRate), data=measures.combined, 
+  plot(symptomsToPeakDay ~ repRate, data=measures.combined[!measures.combined$ID %in% 
+                                              c(noro.unclearpeaks, sars.unclearpeaks),], 
    col=ifelse(pathogen == 'Norovirus', noro.color, sars.color),
    pch=ifelse(symptomsToPeakDay < 0 & pathogen == 'Norovirus', 17, 
                 ifelse(symptomsToPeakDay > 0 & pathogen == 'Norovirus', 2,
@@ -1626,7 +1604,7 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
                                               c(noro.unclearpeaks, sars.unclearpeaks),]
                             $peakDay)) + 1)
   
-  plot(peakDay ~ log10(repRate), data=measures.combined[!measures.combined$ID %in% 
+  plot(peakDay ~ repRate, data=measures.combined[!measures.combined$ID %in% 
                                               c(noro.unclearpeaks, sars.unclearpeaks),],
      col=ifelse(pathogen == 'Norovirus', noro.color, sars.color),
      xlim=xlim.bcd,
@@ -1679,7 +1657,7 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
                                               c(noro.unclearpeaks, sars.unclearpeaks),]
                         $incubation, na.rm=T)) + 1)
 
-  plot(incubation ~ log10(repRate), data=measures.combined[!measures.combined$ID %in% 
+  plot(incubation ~ repRate, data=measures.combined[!measures.combined$ID %in% 
                                               c(noro.unclearpeaks, sars.unclearpeaks),],
        col=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
        xlim=xlim.bcd, ylim=ylim.d, cex.axis=cex, cex=cex,
@@ -1786,7 +1764,7 @@ par(mfrow=c(5, 1), oma=c(0.5, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
                           length=n_points)
   
   noro.epred <- data.frame(sheddingTimeBeforeSymptoms= noro.presymp.dur.range)
-  noro.epred <- transform(noro.pred, y_predicted = predict(transmission.presymp.avg.fit.noro, 
+  noro.epred <- transform(noro.epred, y_predicted = predict(transmission.presymp.avg.fit.noro, 
                                                           newdata=noro.epred))
   lines(y_predicted ~ sheddingTimeBeforeSymptoms, data=noro.epred, col=noro.color)
   
@@ -1822,16 +1800,14 @@ par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
 
 # Panel A: Delay between symptom onset and shedding onset
 {  
-  ylim.ab <- c(floor(min(measures.combined[
-    !measures.combined$ID %in% c(noro.unclearpeaks, sars.unclearpeaks),]$symptomsToStartShedding, na.rm=T))-1, 
-               ceiling(max(measures.combined[
-    !measures.combined$ID %in% c(noro.unclearpeaks, sars.unclearpeaks),]$symptomsToStartShedding, na.rm=T))+1)
+  ylim.ab <- c(floor(min(measures.combined$symptomsToStartShedding, na.rm=T))-1, 
+               ceiling(max(measures.combined$symptomsToStartShedding, na.rm=T))+1)
   
   plot(symptomsToStartShedding ~ jitter(ifelse(pathogen == 'Norovirus', 
                                         ifelse(dose == 4.8, .73,
                                                ifelse(dose == 48, 1.067, 1.4)),
                                    2), 1.5), 
-       data=measures.combined[!measures.combined$ID %in% c(noro.unclearpeaks, sars.unclearpeaks),],
+       data=measures.combined,
        col=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
        xlim=c(.4, 2.6),
        ylim=ylim.ab, cex.axis=cex, cex=cex,
@@ -1859,42 +1835,26 @@ par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
        las=2)
   
   #Average delays per pathogen
-  segments(0.3, mean(noro.params.localmin[noro.params.localmin$dose == .48 & 
-                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
-                      na.rm=T), 0.5,
-           mean(noro.params.localmin[noro.params.localmin$dose == .48 & 
-                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
-                na.rm=T), col=noro.color,
-           lwd=cex)
-  
-  segments(0.63, mean(noro.params.localmin[noro.params.localmin$dose == 4.8 & 
-                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
+  segments(0.63, mean(noro.params.localmin[noro.params.localmin$dose == 4.8,]$symptomsToStartShedding, 
                       na.rm=T), 0.83,
-           mean(noro.params.localmin[noro.params.localmin$dose == 4.8 & 
-                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
+           mean(noro.params.localmin[noro.params.localmin$dose == 4.8,]$symptomsToStartShedding, 
                 na.rm=T), col=noro.color,
            lwd=cex)
   
-  segments(0.967, mean(noro.params.localmin[noro.params.localmin$dose == 48 & 
-                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
+  segments(0.967, mean(noro.params.localmin[noro.params.localmin$dose == 48,]$symptomsToStartShedding, 
                      na.rm=T), 1.167,
-           mean(noro.params.localmin[noro.params.localmin$dose == 48 & 
-                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
+           mean(noro.params.localmin[noro.params.localmin$dose == 48,]$symptomsToStartShedding, 
                 na.rm=T), col=noro.color,
            lwd=cex)
   
-  segments(1.3, mean(noro.params.localmin[noro.params.localmin$dose == 4800 & 
-                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
+  segments(1.3, mean(noro.params.localmin[noro.params.localmin$dose == 4800,]$symptomsToStartShedding, 
                      na.rm=T), 1.5,
-           mean(noro.params.localmin[noro.params.localmin$dose == 4800 & 
-                                     !noro.params.localmin$ID %in% noro.unclearpeaks,]$symptomsToStartShedding, 
+           mean(noro.params.localmin[noro.params.localmin$dose == 4800,]$symptomsToStartShedding, 
                 na.rm=T), col=noro.color,
            lwd=cex)
   
-  segments(1.9, mean(sars.params.localmin[!sars.params.localmin$ID %in% sars.unclearpeaks,]
-                     $symptomsToStartShedding, na.rm=T), 2.1,
-           mean(sars.params.localmin[!sars.params.localmin$ID %in% sars.unclearpeaks,]
-                $symptomsToStartShedding, na.rm=T), col=sars.color,
+  segments(1.9, mean(sars.params.localmin$symptomsToStartShedding, na.rm=T), 2.1,
+           mean(sars.params.localmin$symptomsToStartShedding, na.rm=T), col=sars.color,
            lwd=cex)
 
   #Pre-symptomatic vs post-symptomatic line
@@ -1908,12 +1868,12 @@ par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
   # growth rate
   
 {
-  xlim.bcd <- c(floor(log10(min(measures.combined[!measures.combined$ID %in% 
-                                              c(noro.unclearpeaks, sars.unclearpeaks),]$repRate))) - 1,
-              ceiling(log10(max(measures.combined[!measures.combined$ID %in% 
-                                              c(noro.unclearpeaks, sars.unclearpeaks),]$repRate))) + 1)
+  xlim.bcd <- c(floor(min(measures.combined[!measures.combined$ID %in% 
+                                              c(noro.unclearpeaks, sars.unclearpeaks),]$repRate)) - 1,
+              ceiling(max(measures.combined[!measures.combined$ID %in% 
+                                              c(noro.unclearpeaks, sars.unclearpeaks),]$repRate)) + 1)
     
-  plot(symptomsToStartShedding ~ log10(repRate), data=measures.combined[!measures.combined$ID %in% 
+  plot(symptomsToStartShedding ~ repRate, data=measures.combined[!measures.combined$ID %in% 
                                               c(noro.unclearpeaks, sars.unclearpeaks),], 
      col=ifelse(pathogen == 'Norovirus', noro.color, sars.color),
      pch=ifelse(symptomsToStartShedding < 0 & pathogen == 'Norovirus', 17, 
@@ -1974,7 +1934,7 @@ par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
                                               c(noro.unclearpeaks, sars.unclearpeaks),]
                             $sheddingOnset)) + 1)
   
-  plot(sheddingOnset ~ log10(repRate), data=measures.combined[!measures.combined$ID %in% 
+  plot(sheddingOnset ~ repRate, data=measures.combined[!measures.combined$ID %in% 
                                               c(noro.unclearpeaks, sars.unclearpeaks),],
      col=ifelse(pathogen == 'Norovirus', noro.color, sars.color),
      xlim=xlim.bcd,
@@ -2027,7 +1987,7 @@ par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
                                               c(noro.unclearpeaks, sars.unclearpeaks),]
                         $incubation, na.rm=T)) + 1)
 
-  plot(incubation ~ log10(repRate), data=measures.combined[!measures.combined$ID %in% 
+  plot(incubation ~ repRate, data=measures.combined[!measures.combined$ID %in% 
                                               c(noro.unclearpeaks, sars.unclearpeaks),],
        col=ifelse(pathogen == 'Norovirus', noro.color, sars.color), 
        xlim=xlim.bcd, ylim=ylim.d, cex.axis=cex, cex=cex,
