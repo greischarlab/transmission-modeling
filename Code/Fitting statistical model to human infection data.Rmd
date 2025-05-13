@@ -297,30 +297,6 @@ fits.minsse <- function(fits) {
   pars <- unlist((fits[fits$sse == minsse, ])[1,])
   return(pars)
 }
- 
-fitWeightings <- function(sseVector){
-  return(1 - sseVector/max(sseVector))
-} 
-
-# return fits resampled with weights from sse values
-params.resampled <- function(fits) {
-  weightedFits <- fitWeightings(fits$sse)
-  resampledIndices <- sample(1:length(fits$sse), 1, 
-                            replace = T, prob = weightedFits)
-  return(fits[resampledIndices,])
-}
-
-participant.fits.resampled <- function(fits) {
-    participants <- unique(fits$ID)
-  
-    participantparams <- do.call(rbind, 
-                               lapply(participants, 
-                                      function(x) params.resampled(fits[fits$ID == x,])))
-  
-    participantparams[, 2:length(participantparams[1,])] <- apply(participantparams[, 2:length(participantparams[1,])], 2, as.numeric)
-  
-    return(participantparams)
-}
 ```
 
 For endpoints, we looked at values on or after the fifth data point, to
@@ -418,7 +394,7 @@ sars.fits.localmin <- all.fits(sars.TShedData, sars.maxt.firstmin, numFits,
                                detect.threshold = log10(sars.detection.threshold))
 ```
 
-As a result, we saved the results of our first iteration in a csv file.
+We saved the results of our first iteration in a csv file.
 ```{r}
 write.csv(noro.fits.localmin, "Ge fits local minimum.csv")
 
@@ -612,9 +588,7 @@ legend("center", legend=c("SARS-CoV-2", "Norovirus"), col=c(sars.color, noro.col
 dev.off()
 ```
 
-We then plot the trajectories of each participant from both studies using both 
-sets of endpoints. Since they produce qualitatively similar fits, we arbitrarily 
-use the first local minimum in pathogen shedding as the endpoint going forward.
+We then plot the trajectories of each participant from both studies.
 ```{r, fig.height = 7.5, fig.width = 6.5}
 tiff("Participant trajectories norovirus.tiff", res=500,
       height=7.5, width=6.5, unit="in")
@@ -868,6 +842,8 @@ delay between shedding onset and symptom onset. A negative delay indicates
 pre-symptomatic transmission, while a positive one indicates post-symptomatic
 transmission. The delay is in days.
 
+We also note incubation period, shedding onset, and time of peak pathogen load.
+
 ```{r}
 lmMetrics <- function(dataSet, columnName, xValues = NA){
   lmFit <- lm(formula = reformulate("repRate", response = columnName), data = dataSet)
@@ -927,9 +903,42 @@ sars.fits.clearpeaks <- sars.fits.localmin[which(!sars.fits.localmin$ID%in%sars.
 sars.params.clearpeaks <- sars.params.localmin[which(!sars.params.localmin$ID%in%sars.unclearpeaks),]
 ```
 
-We then use bootstrapping to create 95% confidence intervals (n = 1000) around 
-the linear regressions we show in Figures 3 and S6.
+To assess the relationship between pre-symptomatic transmission and viral replication
+rate, we store the projected values from linear regressions between various
+measures and replication rate. 
+
+We also use bootstrapping to create 95% confidence intervals (n = 1000) around 
+the linear regressions we show in Figures 3 and S6. For each iteration, we 
+resample for each participant 1 fit from the 1000 executed previously weighted by
+SSE, run a linear regression between the response variable and viral replication 
+rate across all participants, and project the response variable values for 10 
+evenly-spaced replication rates (log10 scale). After 1000 iterations, we then 
+take the 97.5 and 2.5 quantiles of these 10 response variable values. 
 ```{r} 
+fitWeightings <- function(sseVector){
+  return(1 - sseVector/max(sseVector))
+} 
+
+# return fits resampled with weights from sse values
+params.resampled <- function(fits) {
+  weightedFits <- fitWeightings(fits$sse)
+  resampledIndices <- sample(1:length(fits$sse), 1, 
+                            replace = T, prob = weightedFits)
+  return(fits[resampledIndices,])
+}
+
+participant.fits.resampled <- function(fits) {
+    participants <- unique(fits$ID)
+  
+    participantparams <- do.call(rbind, 
+                               lapply(participants, 
+                                      function(x) params.resampled(fits[fits$ID == x,])))
+  
+    participantparams[, 2:length(participantparams[1,])] <- apply(participantparams[, 2:length(participantparams[1,])], 2, as.numeric)
+  
+    return(participantparams)
+}
+
 # generate resampled summary table for each participant
 
 iters <- 1000
@@ -977,17 +986,17 @@ sarsSummary <- data.frame(t = sars.r.range,
                          sympToShedLCI = rep(NA, n_points),
                          sympToShedUCI = rep(NA, n_points))
 
-noroSummary$peakDay <- lmMetrics(noro.params.localmin, 'peakDay', noro.r.range)
-noroSummary$symp <- lmMetrics(noro.params.localmin, 'incubation', noro.r.range)
-noroSummary$sympToPeakDay <- lmMetrics(noro.params.localmin, 'symptomsToPeakDay', noro.r.range)
-noroSummary$shedding <- lmMetrics(noro.params.localmin, 'sheddingOnset', noro.r.range)
-noroSummary$sympToShed <- lmMetrics(noro.params.localmin, 'symptomsToStartShedding', noro.r.range)
+noroSummary$peakDay <- lmMetrics(noro.params.clearpeaks, 'peakDay', noro.r.range)
+noroSummary$symp <- lmMetrics(noro.params.clearpeaks, 'incubation', noro.r.range)
+noroSummary$sympToPeakDay <- lmMetrics(noro.params.clearpeaks, 'symptomsToPeakDay', noro.r.range)
+noroSummary$shedding <- lmMetrics(noro.params.clearpeaks, 'sheddingOnset', noro.r.range)
+noroSummary$sympToShed <- lmMetrics(noro.params.clearpeaks, 'symptomsToStartShedding', noro.r.range)
 
-sarsSummary$peakDay <- lmMetrics(sars.params.localmin, 'peakDay', sars.r.range)
-sarsSummary$symp <- lmMetrics(sars.params.localmin, 'incubation', sars.r.range)
-sarsSummary$sympToPeakDay <- lmMetrics(sars.params.localmin, 'symptomsToPeakDay', sars.r.range)
-sarsSummary$shedding <- lmMetrics(sars.params.localmin, 'sheddingOnset', sars.r.range)
-sarsSummary$sympToShed <- lmMetrics(sars.params.localmin, 'symptomsToStartShedding', sars.r.range)
+sarsSummary$peakDay <- lmMetrics(sars.params.clearpeaks, 'peakDay', sars.r.range)
+sarsSummary$symp <- lmMetrics(sars.params.clearpeaks, 'incubation', sars.r.range)
+sarsSummary$sympToPeakDay <- lmMetrics(sars.params.clearpeaks, 'symptomsToPeakDay', sars.r.range)
+sarsSummary$shedding <- lmMetrics(sars.params.clearpeaks, 'sheddingOnset', sars.r.range)
+sarsSummary$sympToShed <- lmMetrics(sars.params.clearpeaks, 'symptomsToStartShedding', sars.r.range)
 
 peakDayResamples.noro <- matrix(NA, nrow = iters, ncol = n_points)
 sympResamples.noro <- matrix(NA, nrow = iters, ncol = n_points)
@@ -1210,10 +1219,7 @@ noro.params.localmin$avgSheddingBeforeSymptoms_totalshedding <- noro.presymp.avg
 We run a linear regression between the delay between symptom onset and peak
 pathogen load and each of the 4 parameters from the statistical model as well as 
 infectious dose. We also run linear regressions between viral replication and 
-decay rate and between viral replication rate and dose. In the data from the 
-Ge *et al.*, 2023 study, p1, p2, and p3, i.e. peak viral load, 
-viral replication rate, and time of peak viral load, respectively, were found 
-to have significant correlations with delay. 
+decay rate and between viral replication rate and dose.
 ```{r}
 # Peak viral load vs. delay
 lm.fit.p1.delay.conservative.noro <- 
@@ -1263,11 +1269,7 @@ lm.fit.p4.p2.conservative.noro <-
 p4.p2.conservative.pval.noro <- 
   summary(lm.fit.p4.p2.conservative.noro)$coefficients[2,4]
 p4.p2.conservative.pval.noro
-```
 
-There were no significant correlations found within the Zhou *et al.*, 2023 study,
-looking at the same parameters.
-```{r}
 # Peak viral load vs. delay
 lm.fit.p1.delay.conservative.sars <- 
   lm(symptomsToPeakDay ~ p1, data=sars.params.clearpeaks)
@@ -1306,10 +1308,7 @@ p4.p2.conservative.pval.sars
 
 We also test for significant correlations between the statistical 
 model parameters plus infectious dose and the duration of shedding prior to
-symptoms With this non-conservative estimate of pre-symptomatic 
-transmission, we find no significant correlations in the norovirus or SARS-CoV-2 
-data. Separately, we also run linear regressions between shedding onset and 
-replication rate.
+symptoms.
 ```{r}
 lm.fit.p1.delay.nonconservative.noro <- 
   lm(symptomsToStartShedding ~ p1, data=noro.params.clearpeaks)
@@ -1409,10 +1408,6 @@ and viral growth rate by examining the relationships between time of
 peak shedding and viral growth rate as well as between symptom onset
 and viral growth rate. For norovirus, we also see if there are any correlations with
 inoculum dose.
-
-For both norovirus and SARS-CoV-2, there is a significant correlation between
-time of peak shedding and viral growth rate, but not between symptom onset 
-and viral growth rate. There are no significant correlations with dose.
 ```{r}
 lm.fit.p2.peaktime.noro <- lm(peakDay ~ p2, 
                               data=noro.params.clearpeaks)
@@ -1448,7 +1443,7 @@ p2.symponset.pval.sars
 We plot the delay between symptom onset and peak viral shedding for each virus,
 delay vs. viral replication rate, day of peak shedding vs. viral replication rate,
 day of symptom onset vs. viral replication rate, and average viral shedding 
-prior to symptoms vs. duration of pre-symptomatic shedding in a 5-panel plot.
+prior to symptoms vs. duration of shedding prior to symptoms in a 5-panel plot.
 ```{r, fig.height = 7.5, fig.width = 3.5}
 measure.names <- c("ID", "dose", "incubation", "sheddingOnset", "repRate",
                    "peakDay", "symptomsToPeakDay", "symptomsToStartShedding",
@@ -1791,7 +1786,8 @@ dev.off()
 
 We again plot delay vs. virus and delay vs. viral replication rate using
 the non-conservative measure of pre-symptomatic transmission (shedding onset
-minus symptom onset).
+minus symptom onset). We also break down this relationship by plotting
+shedding onset then symptom onset against viral replication rate.
 ```{r, fig.height = 6, fig.width = 3.5}
 
 tiff("Non-conservative pre-symptomatic transmission analysis.tiff", res=500, height=6.5, width=3.5, unit="in")
@@ -2034,8 +2030,7 @@ dev.off()
 ```
 
 We also plot average pre-symptomatic shedding factoring in sample weights vs. 
-the duration of pre-symptomatic shedding for norovirus.
-
+the duration of shedding prior to symptoms for norovirus.
 ```{r}
 tiff("Average pre-symptomatic shedding (including sample weights) vs. duration of pre-symptomatic period.tiff", res=500, 
      height=3.5, width=3.5, unit="in")
@@ -2095,7 +2090,7 @@ par(oma=c(0.5, 1, 0, 0))
 dev.off()
 ```
 
-Lastly, we plot replication rate (p2), time of peak viral load, and time
+Lastly, we plot replication rate, time of peak viral load, and time
 of symptom onset against dose for the norovirus study participants. There is 
 a nonsignificant negative correlation between dose and symptom onset.
 ```{r}
