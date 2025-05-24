@@ -1,7 +1,7 @@
 ---
 title: "Mechanistic Model Usage"
 author: "Kayla Zhang, Damie Pak, Megan Greischar"
-date: "2024-04-27"
+date: "2025-05-24"
 output:
   bookdown::pdf_document2:
     toc: no
@@ -91,12 +91,11 @@ desolve_function <- function(tstep, k, r, model, id) {
 
 ```
 
-Here we provide functions for calculating time of peak pathogen load and 
-symptom onset as well as the delay between symptom onset and peak pathogen load. 
-If time of peak pathogen load comes before time of symptom onset, meaning the 
-calculated delay is negative, then by our definition, there is pre-symptomatic 
-transmission. We also assess the correlation between pathogen replication rate 
-and pre-symptomatic transmission.
+Here we provide functions for calculating time of peak pathogen load, 
+symptom onset, and the end of symptoms, as well as the delay between symptom 
+onset and peak pathogen load. If time of peak pathogen load comes before time of 
+symptom onset, meaning the calculated delay is negative, then by our definition, 
+there is pre-symptomatic transmission. 
 ```{r}
 peak.pathogenloadtime <- function(df) {
   peak.pl <- max(df$pathogen, na.rm=TRUE)
@@ -306,21 +305,13 @@ transmission models (with and without pathogen load cap) to
 investigate the correlation between replication rate and
 pre-symptomatic transmission. 
 ```{r, fig.height = 3.5, fig.width = 3.5}
-get.delays.df <- function(data, param.vals, symp.thresh, var_name) {
-  delays.df <- data.frame(placeholder_name=integer(), 
-                          delay.symponset.peakload=integer())
+get.delays.df <- function(data, param.vals, symp.thresh) {
   
-  names(delays.df)[names(delays.df) == "placeholder_name"] <- var_name
-  
-  for (v in param.vals) {
-    df <- data[data[var_name]==v,]
-    delay.symponset.peakload <- delay.calculation(df, symp.thresh)
-    dftoadd <- data.frame(v, delay.symponset.peakload)
-    names(dftoadd)= c(var_name, "delay.symponset.peakload")
-    delays.df <- rbind(delays.df, dftoadd)
-  }
-  
-  delays.df$symp.thresh = symp.thresh
+  delays.df <- do.call(rbind, lapply(param.vals, function(x) 
+    data.frame(r=x,
+               delay.symponset.peakload=
+                 delay.calculation(data[data$r==x,], symp.thresh),
+               symp.thresh=symp.thresh))) 
   
   return(delays.df)
 }
@@ -347,33 +338,27 @@ varyingr.cap <- do.call(rbind, mapply(desolve_function,
 
 delays.byr.lowsympthresh.nocap <- get.delays.df(data=varyingr.nocap, 
                                           param.vals=r_vals,
-                                          symp.thresh=5, 
-                                          var_name="r")
+                                          symp.thresh=5)
 
 delays.byr.medsympthresh.nocap <- get.delays.df(data=varyingr.nocap, 
                                           param.vals=r_vals,
-                                          symp.thresh=10, 
-                                          var_name="r")
+                                          symp.thresh=10)
 
 delays.byr.highsympthresh.nocap <- get.delays.df(data=varyingr.nocap, 
                                           param.vals=r_vals,
-                                          symp.thresh=15, 
-                                          var_name="r")
+                                          symp.thresh=15)
 
 delays.byr.lowsympthresh.cap <- get.delays.df(data=varyingr.cap, 
                                           param.vals=r_vals,
-                                          symp.thresh=1, 
-                                          var_name="r")
+                                          symp.thresh=1)
 
 delays.byr.medsympthresh.cap <- get.delays.df(data=varyingr.cap, 
                                           param.vals=r_vals,
-                                          symp.thresh=2, 
-                                          var_name="r")
+                                          symp.thresh=2)
 
 delays.byr.highsympthresh.cap <- get.delays.df(data=varyingr.cap, 
                                           param.vals=r_vals,
-                                          symp.thresh=3, 
-                                          var_name="r")
+                                          symp.thresh=3)
 
 plot.varyingr <- function(delaysbyr1, delaysbyr2, delaysbyr3, size, ylow, yhigh,
                           xlow, xhigh) {
@@ -448,8 +433,7 @@ plot.varyingr.cap <- plot.varyingr(delays.byr.lowsympthresh.cap,
                 color="black", size=2) + 
   scale_color_manual(name="Symptom Threshold", values = c("1"= cols[1], 
                                                           "2"= cols[2], 
-                                                          "3"= cols[3])) +
-  theme(legend.position="none")
+                                                          "3"= cols[3]))
 
 grid.arrange(plot.varyingr.nocap, plot.varyingr.cap, nrow=2, 
              left=textGrob("Day of peak viral load \n minus day of symptom onset",
@@ -467,15 +451,11 @@ peak.immunetime <- function(df) {
 }
 
 get.peaktimes.df <- function(data) {
-  peaktimes.df <- data.frame()
   
-  for (r in r_vals) {
-    df <- data[data$r==r,]
-    pathogen.peaktime <- peak.pathogenloadtime(df)
-    immune.peaktime <- peak.immunetime(df)
-    dftoadd <- data.frame(r, pathogen.peaktime, immune.peaktime)
-    peaktimes.df <- rbind(peaktimes.df, dftoadd)
-  }
+  peaktimes.df <- do.call(rbind, lapply(r_vals, function(x) 
+    data.frame(r=x,
+               pathogen.peaktime=peak.pathogenloadtime(data[data$r==x,]),
+               immune.peaktime=peak.immunetime(data[data$r==x,])))) 
   
   return(peaktimes.df)
 }

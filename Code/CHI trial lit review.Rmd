@@ -1,7 +1,7 @@
 ---
 title: "CHI Trial Literature Review"
 author: "Kayla Zhang, Damie Pak, Megan Greischar"
-date: "2024-04-27"
+date: "2024-05-24"
 output:
   bookdown::pdf_document2:
     toc: no
@@ -101,7 +101,7 @@ plot.pane <- function(dat, axis.labels) {
   }
 }
 
-chidata <- read.csv(here('data', 'ViralCHIStudies.csv'))
+chidata <- read.csv(here('data', 'chistudies.csv'))
 
 leftpane <- chidata[chidata$virus %in% c('Influenza A', 'Rhinovirus'),]
 rightpane <- chidata[chidata$virus %in% c('Norovirus', 'RSV', 'SARS-CoV-2'),]
