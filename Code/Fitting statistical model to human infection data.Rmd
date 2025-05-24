@@ -538,6 +538,31 @@ lmMetrics <- function(dataSet, columnName, xValues = NA){
   return(res)
 } 
 
+fitWeightings <- function(sseVector){
+  weights = 1 - sseVector/max(sseVector)
+  return(weights/sum(weights))
+}
+
+# Return fits resampled with weights from sse values
+params.resampled <- function(fits) {
+  weightedFits <- fitWeightings(fits$sse)
+  resampledIndices <- sample(1:length(fits$sse), 1, 
+                            replace = T, prob = weightedFits)
+  return(fits[resampledIndices,])
+}
+
+participant.fits.resampled <- function(fits) {
+    participants <- unique(fits$ID)
+  
+    participantparams <- do.call(rbind, 
+                               lapply(participants, 
+                                      function(x) params.resampled(fits[fits$ID == x,])))
+  
+    participantparams[, 2:length(participantparams[1,])] <- apply(participantparams[, 2:length(participantparams[1,])], 2, as.numeric)
+  
+    return(participantparams)
+}
+
 rep.summary.table <- function(fits, params, iters, n_points) {
   
   r.range <- seq(min(params$repRate),
@@ -605,15 +630,17 @@ dose.summary.table <- function(fits, params, iters, pathogen) {
 
   if(pathogen == 'Norovirus') {
     summary <- rev(as.data.frame(params %>% group_by(dose) %>% summarise(across(c(symptomsToPeakDay,
-                                                     incubation,
-                                                     peakDay,
-                                                     repRate), 
+                                                                                  symptomsToStartShedding,
+                                                                                  incubation,
+                                                                                  peakDay,
+                                                                                  repRate), 
                                             ~ mean(.x, na.rm=TRUE)))))
     
     avgPeakDayResamples <- matrix(NA, nrow = iters, ncol = n_points)
     avgRepRateResamples <- matrix(NA, nrow = iters, ncol = n_points)
   } else {
-    summary <- as.data.frame(params %>% group_by(dose) %>% summarise(across(symptomsToPeakDay, 
+    summary <- as.data.frame(params %>% group_by(dose) %>% summarise(across(c(symptomsToPeakDay, 
+                                                                            symptomsToStartShedding),
                                             ~ mean(.x, na.rm=TRUE))))
   }
   
@@ -728,8 +755,6 @@ noro.params <- add.presymp.transmission.potential(noro.params,
 sars.params <- add.presymp.transmission.potential(sars.params,
                                                   sars.TShedData,
                                                   sars.IncubData)
-
-
 ```
 
 We also used cumulative pre-symptomatic shedding as an alternative measure of
@@ -1003,11 +1028,14 @@ transmission.presymp.avg.pval.sars
 Lastly, we break down the correlation between pre-symptomatic transmission
 and viral replication rate by examining the relationships between time of
 peak shedding and replication rate as well as between symptom onset
-and replication rate.
+and replication rate. We also look at the correlation between time of 
+shedding onset and replication rate. For norovirus, we assess any dose
+impacts on symptom onset.
 
 For both norovirus and SARS-CoV-2, there is a significant correlation between
 time of peak shedding and viral replication rate, but not between symptom onset 
-and replication rate.
+and replication rate. For norovirus, there is also an additional significant
+correlation between time of shedding onset and replication rate.
 ```{r}
 lm.fit.p2.peaktime.noro <- lm(peakDay ~ p2, 
                               data=noro.params.clearpeaks)
@@ -1809,7 +1837,6 @@ the non-conservative measure of pre-symptomatic transmission (shedding onset
 minus symptom onset). We also plot shedding and symptom onset against 
 replication rate.
 ```{r, fig.height = 6, fig.width = 3.5}
-
 tiff("Non-conservative pre-symptomatic transmission analysis.tiff", res=500, height=6.5, width=3.5, unit="in")
 
 par(mfrow=c(4, 1), oma=c(1, 2, 0.5, 0), mai=c(0.3, 0.5, 0.3, 0.1))
