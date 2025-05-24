@@ -389,57 +389,54 @@ plot.varyingr <- function(delaysbyr1, delaysbyr2, delaysbyr3, size, ylow, yhigh,
     geom_point(data=highlighted_points, aes(x=r, y=delay.symponset.peakload), color="red", size=1)) 
 }
 
-tiff("Delays varying r.tiff", res=500, 
-     height=3.5, width=3.5, unit="in")
-
 cols <- colorRampPalette(c("deepskyblue", "deepskyblue4"))
 cols <- cols(3)
 
-plot.varyingr.nocap <- plot.varyingr(delays.byr.lowsympthresh.nocap, 
-              delays.byr.medsympthresh.nocap, 
-              delays.byr.highsympthresh.nocap, 
-              size=6, 
-              ylow=-.02, 
-              yhigh=.005, 
-              xlow=0, 
-              xhigh=350) + 
-  ggtitle("A) No Carrying Capacity") + 
-  xlab("") +
-  ylab("") +
-  geom_text(aes(x=315, y=-0.0013, label = "Pre-symptomatic"),
-                color="black", size=2) +
-  geom_text(aes(x=315, y=0.0017, label = "Post-symptomatic"),
-                color="black", size=2) +
-  scale_color_manual(name="Symptom Threshold", values = c("5"= cols[1], 
-                                                          "10"= cols[2], 
-                                                          "15"= cols[3]),
-                     limits=c("5", "10", "15"))
+{plot.varyingr.nocap <- plot.varyingr(delays.byr.lowsympthresh.nocap, 
+                delays.byr.medsympthresh.nocap, 
+                delays.byr.highsympthresh.nocap, 
+                size=6, 
+                ylow=-.02, 
+                yhigh=.005, 
+                xlow=0, 
+                xhigh=350) + 
+    ggtitle("A) No Carrying Capacity") + 
+    xlab("") +
+    ylab("") +
+    geom_text(aes(x=315, y=-0.0013, label = "Pre-symptomatic"),
+                  color="black", size=2) +
+    geom_text(aes(x=315, y=0.0017, label = "Post-symptomatic"),
+                  color="black", size=2) +
+    scale_color_manual(name="Symptom Threshold", values = c("5"= cols[1], 
+                                                            "10"= cols[2], 
+                                                            "15"= cols[3]),
+                       limits=c("5", "10", "15"))
+    
   
-
-plot.varyingr.cap <- plot.varyingr(delays.byr.lowsympthresh.cap,
-              delays.byr.medsympthresh.cap, 
-              delays.byr.highsympthresh.cap, 
-              size=6, 
-              ylow=-.006, 
-              yhigh=.006, 
-              xlow=0, 
-              xhigh=350) + 
-  ggtitle("B) Pathogen Load Carrying Capacity") +
-  xlab("Replication rate (r)") + 
-  ylab("") +
-  geom_text(aes(x=315, y=-0.00065, label = "Pre-symptomatic"),
-                color="black", size=2) +
-  geom_text(aes(x=315, y=0.0008, label = "Post-symptomatic"),
-                color="black", size=2) + 
-  scale_color_manual(name="Symptom Threshold", values = c("1"= cols[1], 
-                                                          "2"= cols[2], 
-                                                          "3"= cols[3]))
-
-grid.arrange(plot.varyingr.nocap, plot.varyingr.cap, nrow=2, 
-             left=textGrob("Day of peak viral load \n minus day of symptom onset",
-             gp = gpar(fontsize = 6),
-             rot=90))
-dev.off()
+  plot.varyingr.cap <- plot.varyingr(delays.byr.lowsympthresh.cap,
+                delays.byr.medsympthresh.cap, 
+                delays.byr.highsympthresh.cap, 
+                size=6, 
+                ylow=-.006, 
+                yhigh=.006, 
+                xlow=0, 
+                xhigh=350) + 
+    ggtitle("B) Pathogen Load Carrying Capacity") +
+    xlab("Replication rate (r)") + 
+    ylab("") +
+    geom_text(aes(x=315, y=-0.00065, label = "Pre-symptomatic"),
+                  color="black", size=2) +
+    geom_text(aes(x=315, y=0.0008, label = "Post-symptomatic"),
+                  color="black", size=2) + 
+    scale_color_manual(name="Symptom Threshold", values = c("1"= cols[1], 
+                                                            "2"= cols[2], 
+                                                            "3"= cols[3]))
+  
+  grid.arrange(plot.varyingr.nocap, plot.varyingr.cap, nrow=2, 
+               left=textGrob("Day of peak viral load \n minus day of symptom onset",
+               gp = gpar(fontsize = 6),
+               rot=90))
+}
 ```
 
 We show that for the range of replication rates used, immune response peaks after 

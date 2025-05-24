@@ -116,7 +116,6 @@ labels.left <- c("Influenza A", "Rhinovirus")
 
 labels.right <- c("Norovirus", "RSV", "SARS-CoV-2")
 
-tiff("CHI trial literature review.tiff", res=500, height=6.5, width=6.5, unit="in")
 {
   par(bty='n', mfrow=c(1, 2), oma=c(1, 0, 0, 0), mar=c(1.1, 0.5, 0, 0))
   plot.pane(leftpane, labels.left)
@@ -129,7 +128,6 @@ tiff("CHI trial literature review.tiff", res=500, height=6.5, width=6.5, unit="i
         adj=0.5, cex=0.8)
   plot.pane(rightpane, labels.right)
 }
-dev.off()
 ```
 
 
